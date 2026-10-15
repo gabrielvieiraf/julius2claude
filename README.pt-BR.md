@@ -14,6 +14,17 @@ Um gerenciador de contas do Claude Code que retoma a mesma sessão na próxima c
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 
+## Problemas que resolve
+
+- `You've hit your session limit · resets 3:45pm` ou `You've hit your weekly limit` no meio de uma
+  tarefa: a sessão passa para outra conta sua e continua a mesma conversa.
+- Alternar entre conta pessoal e conta da empresa exige `/logout`, `/login` e navegador: cada conta
+  mantém o próprio login, e `claude-work` ou `j2c -P work` inicia nela.
+- `Please run /login` e `invalid_grant` depois de trocar de conta com ferramentas que copiam tokens:
+  o julius2claude nunca copia credenciais.
+- Agentes e sessões parados no meio quando o limite chegou, a máquina dormiu ou o WSL reiniciou:
+  `j2c rescue` e `j2c recover` os retomam e executam de novo o que foi interrompido.
+
 ## Visão geral
 
 O julius2claude (comando `j2c`) executa o Claude Code oficial em várias contas que pertencem a
@@ -153,6 +164,7 @@ subdiretórios. No modo estrito, nenhum outro perfil pode ser usado ali.
 ```bash
 j2c                     # inicia no perfil vinculado ao diretório ou no padrão
 j2c -P work             # inicia em um perfil específico
+claude-work             # o mesmo que j2c -P work (um comando por perfil)
 j2c -c                  # continua a última conversa deste diretório, supervisionada
 j2c --no-binding        # ignora os vínculos de diretório nesta sessão
 j2c use work            # define o perfil padrão
@@ -162,7 +174,18 @@ j2c stats [--days N]    # tokens por perfil e tempo até atingir cada limite
 j2c recover [n]         # lista ou retoma sessões interrompidas
 j2c rescue [n] [--model sonnet]  # move uma sessão travada no limite para a próxima conta
 j2c doctor              # diagnostica problemas comuns
+j2c pause work          # tira um perfil da rotação automática (j2c resume work)
+j2c notify on           # notificações de trocas e limites (--webhook https://...)
+j2c events --follow     # eventos de limite e troca em tempo real
+j2c update              # atualiza o julius2claude
 ```
+
+Autocompletar: adicione `eval "$(j2c completion zsh)"` (ou `bash`, ou `j2c completion fish | source`)
+ao perfil do seu shell.
+
+Toda listagem aceita `--json` (`status`, `usage`, `stats`, `events`, `rescue`, `recover`). A saída
+traz um `schemaVersion`; dentro de uma versão, campos só são adicionados, nunca renomeados ou
+removidos.
 
 Dentro do Claude Code:
 
@@ -311,12 +334,36 @@ julius2claude não tem vínculo com a Anthropic.
 | macOS | Beta. A validade do login fica no Keychain e aparece como desconhecida. |
 | Windows | Experimental. Diretórios compartilhados usam junctions. |
 
+## Solução de problemas
+
+| Sintoma | O que fazer |
+|---|---|
+| Um perfil mostra `needs login` | `j2c login <perfil>` |
+| O uso aparece como `unknown` | Normal até uma resposta rodar naquele perfil pelo `j2c` |
+| Uma sessão iniciada com `claude` travou no limite | `j2c rescue` em qualquer terminal |
+| Uma sessão morreu junto com a máquina ou o WSL | `j2c recover` |
+| `claude-<perfil>` não é encontrado | Rode `j2c shims`; os comandos ficam junto do `j2c` |
+| Outra coisa | `j2c doctor`, e abra uma issue com a saída dele e o `~/.julius2claude/j2c.log` |
+
+## Atualizar e desinstalar
+
+```bash
+j2c update              # ou: npm install -g julius2claude@latest
+j2c uninstall           # remove os comandos /j2c:* e claude-<perfil>, mantém os perfis
+j2c uninstall --purge   # também apaga ~/.julius2claude e o login de cada perfil extra
+npm uninstall -g julius2claude
+```
+
+O seu login principal em `~/.claude` nunca é alterado. Os logins dos perfis extras não são revogados
+pelo `--purge`; encerre essas sessões no claude.ai se quiser.
+
 ## Dados e privacidade
 
 - Sem telemetria.
 - Os valores dos tokens nunca são lidos nem gravados. Apenas as datas de validade são lidas.
 - O estado fica em `~/.julius2claude`: configuração, registros de uso e um registro de sessões
   usado na recuperação. Os logs ficam em `~/.julius2claude/j2c.log`.
+- A lista completa de arquivos lidos e gravados está no [SECURITY.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/SECURITY.md).
 
 ## Desenvolvimento
 

@@ -14,6 +14,17 @@ A Claude Code account switcher that resumes the same session on the next account
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 
+## Problems it solves
+
+- `You've hit your session limit · resets 3:45pm` or `You've hit your weekly limit` in the middle of
+  a task: the session moves to another of your accounts and continues the same conversation.
+- Switching between a personal and a company account means `/logout`, `/login` and a browser:
+  each account keeps its own login, and `claude-work` or `j2c -P work` starts on it.
+- `Please run /login` and `invalid_grant` after switching accounts with tools that copy tokens:
+  julius2claude never copies credentials.
+- Agents and sessions stopped halfway when the limit hit, the machine slept or WSL restarted:
+  `j2c rescue` and `j2c recover` bring them back and re-run what was cut.
+
 ## Overview
 
 julius2claude (command `j2c`) runs the official Claude Code CLI across several accounts that belong
@@ -153,6 +164,7 @@ In strict mode, no other profile can run there.
 ```bash
 j2c                     # start on the bound profile, or the default one
 j2c -P work             # start on a specific profile
+claude-work             # same as j2c -P work (one command per profile)
 j2c -c                  # continue the last conversation in this directory, supervised
 j2c --no-binding        # ignore directory bindings for this session
 j2c use work            # set the default profile
@@ -162,7 +174,17 @@ j2c stats [--days N]    # tokens per profile and time taken to reach each limit
 j2c recover [n]         # list or resume interrupted sessions
 j2c rescue [n] [--model sonnet]  # move a session stuck at a limit to the next account
 j2c doctor              # diagnose common problems
+j2c pause work          # keep a profile out of the automatic rotation (j2c resume work)
+j2c notify on           # desktop notifications for switches and limits (--webhook https://...)
+j2c events --follow     # limit and switch events as they happen
+j2c update              # update julius2claude
 ```
+
+Shell completion: add `eval "$(j2c completion zsh)"` (or `bash`, or `j2c completion fish | source`)
+to your shell profile.
+
+Every listing accepts `--json` (`status`, `usage`, `stats`, `events`, `rescue`, `recover`). The
+output carries a `schemaVersion`; fields are only added within a version, never renamed or removed.
 
 Inside Claude Code:
 
@@ -309,12 +331,36 @@ julius2claude is not affiliated with Anthropic.
 | macOS | Beta. Login expiry is stored in the Keychain and shown as unknown. |
 | Windows | Experimental. Shared directories use junctions. |
 
+## Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| A profile shows `needs login` | `j2c login <profile>` |
+| Usage shows `unknown` | Normal until one reply runs on that profile through `j2c` |
+| A session started with `claude` is stuck at a limit | `j2c rescue` from any terminal |
+| A session died with the machine or WSL | `j2c recover` |
+| `claude-<profile>` is not found | Run `j2c shims`; the commands live next to `j2c` |
+| Something else | `j2c doctor`, then open an issue with its output and `~/.julius2claude/j2c.log` |
+
+## Updating and uninstalling
+
+```bash
+j2c update              # or: npm install -g julius2claude@latest
+j2c uninstall           # removes the /j2c:* and claude-<profile> commands, keeps your profiles
+j2c uninstall --purge   # also deletes ~/.julius2claude and every extra profile's login
+npm uninstall -g julius2claude
+```
+
+Your main login in `~/.claude` is never touched. Logins of extra profiles are not revoked by
+`--purge`; sign them out at claude.ai if you want that.
+
 ## Data and privacy
 
 - No telemetry.
 - Token values are never read or written. Only expiry timestamps are read.
 - State is stored in `~/.julius2claude`: configuration, usage snapshots and a session ledger used
   for recovery. Logs are written to `~/.julius2claude/j2c.log`.
+- The full list of files read and written is in [SECURITY.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/SECURITY.md).
 
 ## Development
 
