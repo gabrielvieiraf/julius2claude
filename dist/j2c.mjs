@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import fs14 from "node:fs";
-import path12 from "node:path";
+import fs15 from "node:fs";
+import path13 from "node:path";
 
 import os from "node:os";
 import path from "node:path";
@@ -139,8 +139,8 @@ function withoutBindings(cfg, skip) {
 }
 var NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
-import fs6 from "node:fs";
-import path6 from "node:path";
+import fs8 from "node:fs";
+import path7 from "node:path";
 
 import path4 from "node:path";
 
@@ -429,7 +429,7 @@ function pickNext(cfg, usage, from, cwd, now = nowS()) {
   const group = from?.group ?? "default";
   const allowed = new Set(allowedIn(cfg, cwd).map((p) => p.name));
   const candidates = ordered(cfg).filter(
-    (p) => p.name !== from?.name && allowed.has(p.name) && (p.group ?? "default") === group && (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid)
+    (p) => p.name !== from?.name && !p.paused && allowed.has(p.name) && (p.group ?? "default") === group && (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid)
   );
   let soonest = Infinity;
   for (const p of candidates) {
@@ -461,6 +461,10 @@ function pickStart(cfg, usage, cwd, explicit) {
   }
   const b = bindingFor(cfg, cwd);
   const preferred = cfg.profiles.find((p) => p.name === (b?.profile ?? cfg.active)) ?? cfg.profiles[0];
+  if (preferred.paused && !b) {
+    const next3 = pickNext(cfg, usage, preferred, cwd);
+    if (next3.profile) return next3;
+  }
   if (!cfg.autoSwitch.enabled || usable(cfg, usage, preferred).ok) return { profile: preferred, bound: !!b };
   const next2 = pickNext(cfg, usage, preferred, cwd);
   return next2.profile ? next2 : { profile: preferred, bound: !!b, ...next2 };
@@ -701,6 +705,107 @@ function fmtDuration(sec) {
   return `${m}m`;
 }
 
+import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
+import fs7 from "node:fs";
+import path6 from "node:path";
+
+import { spawn, spawnSync } from "node:child_process";
+import fs6 from "node:fs";
+function isWsl() {
+  if (process.platform !== "linux") return false;
+  if (process.env.WSL_DISTRO_NAME) return true;
+  try {
+    return /microsoft/i.test(fs6.readFileSync("/proc/version", "utf8"));
+  } catch {
+    return false;
+  }
+}
+function has(cmd) {
+  return spawnSync(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" }).status === 0;
+}
+function copyToClipboard(text) {
+  if (process.env.J2C_NO_CLIPBOARD) return false;
+  const candidates = process.platform === "darwin" ? [["pbcopy", []]] : process.platform === "win32" ? [["clip", []]] : isWsl() ? [["clip.exe", []]] : [["wl-copy", []], ["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]];
+  for (const [cmd, args] of candidates) {
+    if (!has(cmd)) continue;
+    const r = spawnSync(cmd, args, { input: text, stdio: ["pipe", "ignore", "ignore"], timeout: 5e3 });
+    if (r.status === 0) return true;
+  }
+  return false;
+}
+function openInBrowser(url) {
+  const [cmd, args] = process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["explorer.exe", [url]] : isWsl() ? has("wslview") ? ["wslview", [url]] : ["explorer.exe", [url]] : ["xdg-open", [url]];
+  if (!has(cmd)) return false;
+  try {
+    spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+var DEDUPE_MS = 60 * 6e4;
+function has2(cmd) {
+  return spawnSync2("which", [cmd], { stdio: "ignore" }).status === 0;
+}
+function systemNotify(title, body2) {
+  const env = { ...process.env, J2C_TITLE: title, J2C_BODY: body2 };
+  let cmd;
+  let args;
+  if (process.platform === "darwin") {
+    cmd = "osascript";
+    args = ["-e", 'display notification (system attribute "J2C_BODY") with title (system attribute "J2C_TITLE")'];
+  } else if (process.platform === "win32" || isWsl()) {
+    cmd = process.platform === "win32" ? "powershell" : "powershell.exe";
+    args = [
+      "-NoProfile",
+      "-Command",
+      "Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(8000, $env:J2C_TITLE, $env:J2C_BODY, 'Info'); Start-Sleep -Seconds 9; $n.Dispose()"
+    ];
+    if (process.platform !== "win32") env.WSLENV = [process.env.WSLENV, "J2C_TITLE/u", "J2C_BODY/u"].filter(Boolean).join(":");
+  } else if (has2("notify-send")) {
+    cmd = "notify-send";
+    args = ["--app-name=julius2claude", title, body2];
+  } else {
+    return false;
+  }
+  try {
+    spawn2(cmd, args, { env, stdio: "ignore", detached: true }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function webhook(url, title, body2) {
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: `${title}: ${body2}`, content: `${title}: ${body2}`, title, body: body2 }),
+      signal: AbortSignal.timeout(5e3)
+    });
+  } catch (e) {
+    log(`notify webhook failed: ${e?.message ?? e}`);
+  }
+}
+async function notify(key, title, body2, force = false) {
+  const cfg = loadConfig();
+  if (!cfg.notify?.enabled && !force) return;
+  let fresh = true;
+  if (!force)
+    updateJson(path6.join(paths.stateDir(), "notified.json"), {}, (m) => {
+      if (m[key] && Date.now() - m[key] < DEDUPE_MS) fresh = false;
+      else m[key] = Date.now();
+    });
+  if (!fresh) return;
+  if (process.env.J2C_NOTIFY_FILE) {
+    fs7.appendFileSync(process.env.J2C_NOTIFY_FILE, JSON.stringify({ key, title, body: body2 }) + "\n");
+    return;
+  }
+  systemNotify(title, body2);
+  if (cfg.notify?.webhook) await webhook(cfg.notify.webhook, title, body2);
+}
+
 var HARD_ERRORS = {
   authentication_failed: "login failed (run `j2c login <profile>`)",
   oauth_org_not_allowed: "organization does not allow this login here",
@@ -789,7 +894,7 @@ function record(run, sessionId, state, transcriptPath) {
     ...transcriptPath ? { transcriptPath } : {}
   });
 }
-function onStopFailure(run, data) {
+async function onStopFailure(run, data) {
   const error = data.error ?? data.error_type ?? "unknown";
   const now = Date.now();
   ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
@@ -803,6 +908,7 @@ function onStopFailure(run, data) {
   let hard = false;
   if (HARD_ERRORS[error]) {
     hard = true;
+    await notify(`auth:${run.profile}:${error}`, `julius2claude: ${run.profile} needs attention`, HARD_ERRORS[error].replace("<profile>", run.profile));
     mutateUsage((u) => {
       const cur = u[run.profile] ??= {};
       cur.blocks = [...cur.blocks ?? [], { until: 0, reason: HARD_ERRORS[error], type: "auth" }];
@@ -848,12 +954,12 @@ function findRefusal(run, transcript) {
   const since = run.childStartedAt ?? run.startedAt;
   const main2 = findQuotaRefusal(transcript, since);
   if (main2) return main2;
-  const subDir = path6.join(transcript.replace(/\.jsonl$/, ""), "subagents");
+  const subDir = path7.join(transcript.replace(/\.jsonl$/, ""), "subagents");
   let best;
   try {
-    for (const f of fs6.readdirSync(subDir)) {
+    for (const f of fs8.readdirSync(subDir)) {
       if (!f.endsWith(".jsonl")) continue;
-      const r = findQuotaRefusal(path6.join(subDir, f), since);
+      const r = findQuotaRefusal(path7.join(subDir, f), since);
       if (r && (!best || r.at > best.at)) best = r;
     }
   } catch {
@@ -875,12 +981,12 @@ function limitLabel(type) {
   }
 }
 
-import { spawn as spawn3 } from "node:child_process";
-import fs10 from "node:fs";
-import path8 from "node:path";
+import { spawn as spawn4 } from "node:child_process";
+import fs11 from "node:fs";
+import path9 from "node:path";
 
-import { execFileSync, spawnSync } from "node:child_process";
-import fs7 from "node:fs";
+import { execFileSync, spawnSync as spawnSync3 } from "node:child_process";
+import fs9 from "node:fs";
 function descendants(root) {
   if (process.platform === "win32") return [];
   let out = "";
@@ -916,14 +1022,14 @@ function signal(pids, sig) {
 }
 function saveTty() {
   if (process.platform === "win32" || !process.stdin.isTTY) return void 0;
-  const r = spawnSync("stty", ["-g"], { stdio: ["inherit", "pipe", "ignore"], encoding: "utf8" });
+  const r = spawnSync3("stty", ["-g"], { stdio: ["inherit", "pipe", "ignore"], encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : void 0;
 }
 function restoreTty(saved) {
   if (!process.stdout.isTTY) return;
-  if (saved) spawnSync("stty", [saved], { stdio: ["inherit", "ignore", "ignore"] });
+  if (saved) spawnSync3("stty", [saved], { stdio: ["inherit", "ignore", "ignore"] });
   try {
-    fs7.writeSync(1, "\x1B[=0u\x1B[<u\x1B[?1000l\x1B[?1002l\x1B[?1003l\x1B[?1006l\x1B[?2004l\x1B[?1049l\x1B[?25h");
+    fs9.writeSync(1, "\x1B[=0u\x1B[<u\x1B[?1000l\x1B[?1002l\x1B[?1003l\x1B[?1006l\x1B[?2004l\x1B[?1049l\x1B[?25h");
   } catch {
   }
 }
@@ -948,45 +1054,10 @@ function versionAtLeast(v, min) {
   return true;
 }
 
-import { spawn, spawnSync as spawnSync2 } from "node:child_process";
-import fs8 from "node:fs";
-function isWsl() {
-  if (process.platform !== "linux") return false;
-  if (process.env.WSL_DISTRO_NAME) return true;
-  try {
-    return /microsoft/i.test(fs8.readFileSync("/proc/version", "utf8"));
-  } catch {
-    return false;
-  }
-}
-function has(cmd) {
-  return spawnSync2(process.platform === "win32" ? "where" : "which", [cmd], { stdio: "ignore" }).status === 0;
-}
-function copyToClipboard(text) {
-  if (process.env.J2C_NO_CLIPBOARD) return false;
-  const candidates = process.platform === "darwin" ? [["pbcopy", []]] : process.platform === "win32" ? [["clip", []]] : isWsl() ? [["clip.exe", []]] : [["wl-copy", []], ["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]];
-  for (const [cmd, args] of candidates) {
-    if (!has(cmd)) continue;
-    const r = spawnSync2(cmd, args, { input: text, stdio: ["pipe", "ignore", "ignore"], timeout: 5e3 });
-    if (r.status === 0) return true;
-  }
-  return false;
-}
-function openInBrowser(url) {
-  const [cmd, args] = process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["explorer.exe", [url]] : isWsl() ? has("wslview") ? ["wslview", [url]] : ["explorer.exe", [url]] : ["xdg-open", [url]];
-  if (!has(cmd)) return false;
-  try {
-    spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 import crypto from "node:crypto";
-import fs9 from "node:fs";
-import path7 from "node:path";
+import fs10 from "node:fs";
+import path8 from "node:path";
 var AUTH_ENV_KEYS = [
   "CLAUDE_CODE_USE_BEDROCK",
   "CLAUDE_CODE_USE_VERTEX",
@@ -1018,7 +1089,7 @@ function buildEnv(p, run, keepEnv = false, base = process.env) {
   env.J2C_RUN_ID = run.id;
   env.J2C_PROFILE = p.name;
   env.J2C_NODE = process.execPath;
-  env.J2C_BIN = path7.resolve(process.argv[1] ?? "j2c");
+  env.J2C_BIN = path8.resolve(process.argv[1] ?? "j2c");
   return env;
 }
 function carryFlags(args) {
@@ -1036,9 +1107,9 @@ function carryFlags(args) {
 }
 function userStatusline(p, cwd) {
   const files = [
-    path7.join(cwd, ".claude", "settings.local.json"),
-    path7.join(cwd, ".claude", "settings.json"),
-    path7.join(p.isMain ? defaultClaudeDir() : p.configDir, "settings.json")
+    path8.join(cwd, ".claude", "settings.local.json"),
+    path8.join(cwd, ".claude", "settings.json"),
+    path8.join(p.isMain ? defaultClaudeDir() : p.configDir, "settings.json")
   ];
   for (const f of files) {
     const s = readJson(f, null)?.statusLine;
@@ -1047,7 +1118,7 @@ function userStatusline(p, cwd) {
   return void 0;
 }
 function writeRunSettings(cfg, run, p, extra) {
-  const me = `"${process.execPath}" "${path7.resolve(process.argv[1] ?? "j2c")}"`;
+  const me = `"${process.execPath}" "${path8.resolve(process.argv[1] ?? "j2c")}"`;
   const hook = (ev) => [{ hooks: [{ type: "command", command: `${me} hook ${ev} --run ${run.id}`, timeout: 15 }] }];
   const wrapped = userStatusline(p, run.cwd);
   const settings = {
@@ -1073,7 +1144,7 @@ function writeRunSettings(cfg, run, p, extra) {
     const theirs = v.trim().startsWith("{") ? JSON.parse(v) : readJson(v, {});
     for (const [k, val] of Object.entries(theirs)) if (!(k in settings)) settings[k] = val;
   }
-  const file = path7.join(paths.runsDir(), `${run.id}.settings.json`);
+  const file = path8.join(paths.runsDir(), `${run.id}.settings.json`);
   writeJson(file, settings);
   return file;
 }
@@ -1093,7 +1164,7 @@ var say = (msg) => process.stderr.write(`\x1B[33m[julius2claude]\x1B[0m ${msg}
 `);
 async function supervise(opts) {
   const cfg = withoutBindings(loadConfig(), opts.noBinding);
-  const cwd = path7.resolve(opts.cwd);
+  const cwd = path8.resolve(opts.cwd);
   const start = pickStart(cfg, loadUsage(), cwd, opts.profile);
   if (!start.profile) throw new UserError(start.reason ?? "no usable profile");
   let profile = start.profile;
@@ -1127,7 +1198,7 @@ async function supervise(opts) {
         r.pendingSwitch = void 0;
       });
       log(`launch run=${run.id} profile=${profile.name} args=${JSON.stringify(args)}`);
-      child = spawn2(claudeBin(), ["--settings", settingsFile, ...args], { stdio: "inherit", cwd, env });
+      child = spawn3(claudeBin(), ["--settings", settingsFile, ...args], { stdio: "inherit", cwd, env });
       mutateRun(run.id, (r) => void (r.childPid = child.pid));
       const outcome = await watch(child, run.id);
       if (outcome.kind === "exited") {
@@ -1182,11 +1253,12 @@ async function supervise(opts) {
       const crossOrg = !!fromOrg && !!toOrg && fromOrg !== toOrg;
       mutateRun(run.id, (r) => void (r.lastSwitch = { from, to: profile.name, reason: pending.reason, at: Date.now(), fromOrg, toOrg }));
       say(`${from} \u2192 ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session\u2026" : ""}`);
+      void notify(`switch:${run.id}:${Date.now()}`, `julius2claude: ${from} \u2192 ${profile.name}`, `${pending.reason}. The session continues on ${profile.name}.`);
       if (crossOrg && !cfgNow.bindings.some((b) => b.strict))
         say(`${profile.name} belongs to another organization (${toOrg}). Company isolation is off, so the session moved there. To keep a folder on one account: j2c bind <profile> <folder> --strict`);
       recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
       log(`switch run=${run.id} ${from} -> ${profile.name} reason=${pending.reason} hard=${pending.hard}`);
-      const transcriptOk = !!cur.transcriptPath && fs9.existsSync(cur.transcriptPath);
+      const transcriptOk = !!cur.transcriptPath && fs10.existsSync(cur.transcriptPath);
       if (sessionId && transcriptOk) {
         args = [...liveFlags(carried, cur.live, getProfile(cfgNow, from).provider === profile.provider), "--resume", sessionId];
         if (pending.hard) args.push(continuePrompt(from, profile.name, pending.reason, killedTasks));
@@ -1197,7 +1269,7 @@ async function supervise(opts) {
   } finally {
     process.off("SIGINT", onSigint);
     removeRun(run.id);
-    fs9.rmSync(settingsFile, { force: true });
+    fs10.rmSync(settingsFile, { force: true });
   }
 }
 function watch(child, runId) {
@@ -1257,7 +1329,7 @@ function describe(pids) {
   const out = [];
   for (const p of pids.slice(0, 10)) {
     try {
-      const cmd = fs9.readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").trim();
+      const cmd = fs10.readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").trim();
       if (cmd) out.push(cmd.slice(0, 120));
     } catch {
     }
@@ -1303,6 +1375,7 @@ async function waitForReset(cfg, from, cwd, until) {
     say("every eligible account is blocked and none has a known reset time. Run `j2c status` to see why.");
     return void 0;
   }
+  void notify(`exhausted:${until}`, "julius2claude: every account is at its limit", `The session resumes at ${new Date(until * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}.`);
   say(`every eligible account is at its limit. Waiting until ${new Date(until * 1e3).toLocaleTimeString()} to resume (Ctrl+C to stop).`);
   let cancelled = false;
   const onInt = () => cancelled = true;
@@ -1320,8 +1393,8 @@ async function waitForReset(cfg, from, cwd, until) {
 }
 var delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-var stateFile = (name) => path8.join(paths.stateDir(), `login-${name}.json`);
-var codeFile = (name) => path8.join(paths.stateDir(), `login-${name}.code`);
+var stateFile = (name) => path9.join(paths.stateDir(), `login-${name}.json`);
+var codeFile = (name) => path9.join(paths.stateDir(), `login-${name}.code`);
 var WAIT_FOR_CODE_MS = 15 * 6e4;
 function loginEnv(p) {
   const env = buildEnv(p, { id: "login", pid: process.pid, profile: p.name, cwd: process.cwd(), busy: false, startedAt: Date.now() });
@@ -1362,9 +1435,9 @@ function startLogin(name, email, json, interactive = false) {
     const deadline2 = Date.now() + 5e3;
     while (alive(prev.pid) && Date.now() < deadline2) sleepSync(100);
   }
-  fs10.rmSync(codeFile(name), { force: true });
+  fs11.rmSync(codeFile(name), { force: true });
   writeJson(stateFile(name), { status: "starting", startedAt: Date.now() });
-  const worker = spawn3(process.execPath, [path8.resolve(process.argv[1]), "__login-worker", name, ...email ? ["--email", email] : []], {
+  const worker = spawn4(process.execPath, [path9.resolve(process.argv[1]), "__login-worker", name, ...email ? ["--email", email] : []], {
     detached: true,
     stdio: "ignore",
     env: process.env
@@ -1377,7 +1450,7 @@ function startLogin(name, email, json, interactive = false) {
     st = readJson(stateFile(name), null);
   }
   if (st?.status === "done") {
-    fs10.rmSync(stateFile(name), { force: true });
+    fs11.rmSync(stateFile(name), { force: true });
     if (json) console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "logged_in", email: st.email ?? null, org: st.org ?? null }));
     else console.log(`\u2713 ${name}: ${st.email ?? "logged in"}${st.org ? ` (${st.org})` : ""}`);
     return 0;
@@ -1408,8 +1481,8 @@ function cancelLogin(name) {
     const deadline = Date.now() + 5e3;
     while (alive(st.pid) && Date.now() < deadline) sleepSync(100);
   }
-  fs10.rmSync(stateFile(name), { force: true });
-  fs10.rmSync(codeFile(name), { force: true });
+  fs11.rmSync(stateFile(name), { force: true });
+  fs11.rmSync(codeFile(name), { force: true });
   console.log(`No login is waiting for "${name}" anymore.`);
   return 0;
 }
@@ -1418,7 +1491,7 @@ function submitCode(name, code, json) {
   const st = readJson(stateFile(name), null);
   if (!st || st.status !== "waiting" || !alive(st.pid))
     throw new UserError(`no login is waiting for "${name}". Start one with: j2c login ${name} --start`);
-  fs10.writeFileSync(codeFile(name), code.trim() + "\n", { mode: 384 });
+  fs11.writeFileSync(codeFile(name), code.trim() + "\n", { mode: 384 });
   const deadline = Date.now() + 9e4;
   let cur = st;
   while (Date.now() < deadline) {
@@ -1426,7 +1499,7 @@ function submitCode(name, code, json) {
     cur = readJson(stateFile(name), null);
     if (cur?.status === "done" || cur?.status === "failed") break;
   }
-  fs10.rmSync(codeFile(name), { force: true });
+  fs11.rmSync(codeFile(name), { force: true });
   if (cur?.status !== "done") {
     const msg = cur?.status === "failed" ? cur.error ?? "login failed" : "timed out waiting for the login to finish";
     if (json) console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "failed", error: msg }));
@@ -1439,14 +1512,14 @@ function submitCode(name, code, json) {
     console.log(`\u2713 ${name}: ${cur.email ?? "logged in"}${cur.org ? ` (${cur.org})` : ""}`);
     for (const w of warnings) console.log(`! ${w}`);
   }
-  fs10.rmSync(stateFile(name), { force: true });
+  fs11.rmSync(stateFile(name), { force: true });
   return 0;
 }
 async function loginWorker(name, email) {
   const p = claudeProfile(name);
   const before = readIdentity(p);
   const set = (s) => writeJson(stateFile(name), { ...readJson(stateFile(name), { status: "starting", startedAt: Date.now() }), ...s });
-  const child = spawn3(claudeBin(), ["auth", "login", ...email ? ["--email", email] : []], {
+  const child = spawn4(claudeBin(), ["auth", "login", ...email ? ["--email", email] : []], {
     env: { ...loginEnv(p), BROWSER: process.env.J2C_BROWSER ?? "true" },
     stdio: ["pipe", "pipe", "pipe"]
   });
@@ -1480,8 +1553,8 @@ async function loginWorker(name, email) {
       code = done;
       break;
     }
-    if (!sent && fs10.existsSync(codeFile(name))) {
-      child.stdin.write(fs10.readFileSync(codeFile(name), "utf8"));
+    if (!sent && fs11.existsSync(codeFile(name))) {
+      child.stdin.write(fs11.readFileSync(codeFile(name), "utf8"));
       child.stdin.end();
       sent = true;
     }
@@ -1559,8 +1632,8 @@ function readCode(url) {
   });
 }
 
-import fs11 from "node:fs";
-import path9 from "node:path";
+import fs12 from "node:fs";
+import path10 from "node:path";
 var J2C = `"\${J2C_NODE:-node}" "\${J2C_BIN:-$(command -v j2c)}"`;
 var COMMANDS = {
   use: {
@@ -1596,11 +1669,11 @@ Show the report above to the user exactly as-is inside a code block. Do not do a
   }
 };
 function commandsDir() {
-  return path9.join(defaultClaudeDir(), "commands", "j2c");
+  return path10.join(defaultClaudeDir(), "commands", "j2c");
 }
 function installSlashCommands() {
   const dir = commandsDir();
-  fs11.mkdirSync(dir, { recursive: true });
+  fs12.mkdirSync(dir, { recursive: true });
   const written = [];
   for (const [name, c] of Object.entries(COMMANDS)) {
     const fm = [
@@ -1612,14 +1685,14 @@ function installSlashCommands() {
       "---",
       ""
     ].join("\n");
-    const file = path9.join(dir, `${name}.md`);
-    fs11.writeFileSync(file, fm + c.body + "\n");
+    const file = path10.join(dir, `${name}.md`);
+    fs12.writeFileSync(file, fm + c.body + "\n");
     written.push(file);
   }
   return written;
 }
 
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 async function runStatusline(runId, wrapped) {
   const raw = await readStdin();
   if (runId && !raw.agent_id) rememberLive(runId, raw);
@@ -1672,7 +1745,7 @@ async function runStatusline(runId, wrapped) {
     if (u && !u.enteredAt) mutateUsage((s) => void ((s[profileName] ??= {}).enteredAt = Date.now()));
   }
   if (wrapped) {
-    const r = spawnSync3(wrapped, { shell: true, input: JSON.stringify(raw), encoding: "utf8", timeout: 3e3 });
+    const r = spawnSync4(wrapped, { shell: true, input: JSON.stringify(raw), encoding: "utf8", timeout: 3e3 });
     const out = (r.stdout ?? "").trimEnd();
     if (out) lines.push(out);
   }
@@ -1683,16 +1756,16 @@ function bar(pct) {
   return "\u25B0".repeat(filled) + "\u25B1".repeat(5 - filled);
 }
 
-import fs12 from "node:fs";
-import path10 from "node:path";
+import fs13 from "node:fs";
+import path11 from "node:path";
 import readline from "node:readline";
 var RECENT_MS = 3 * 864e5;
 function configDirs(cfg) {
   return [...new Set([defaultClaudeDir(), ...cfg.profiles.map((p) => p.configDir)])];
 }
 function projectStores(cfg) {
-  const stores = new Set([path10.join(defaultClaudeDir(), "projects")]);
-  for (const p of cfg.profiles) if (p.group && p.group !== "default") stores.add(path10.join(j2cHome(), "groups", p.group, "projects"));
+  const stores = new Set([path11.join(defaultClaudeDir(), "projects")]);
+  for (const p of cfg.profiles) if (p.group && p.group !== "default") stores.add(path11.join(j2cHome(), "groups", p.group, "projects"));
   return [...stores];
 }
 function runningClaudes(cfg) {
@@ -1700,11 +1773,11 @@ function runningClaudes(cfg) {
   for (const dir of configDirs(cfg)) {
     let names = [];
     try {
-      names = fs12.readdirSync(path10.join(dir, "sessions")).filter((n) => /^\d+\.json$/.test(n));
+      names = fs13.readdirSync(path11.join(dir, "sessions")).filter((n) => /^\d+\.json$/.test(n));
     } catch {
     }
     for (const n of names) {
-      const s = readJson(path10.join(dir, "sessions", n), null);
+      const s = readJson(path11.join(dir, "sessions", n), null);
       if (s?.pid && s.sessionId && alive(s.pid)) out.push({ ...s, configDir: dir });
     }
   }
@@ -1713,18 +1786,18 @@ function runningClaudes(cfg) {
 function tailLines(file, bytes = 512 * 1024) {
   let fd;
   try {
-    fd = fs12.openSync(file, "r");
-    const size = fs12.fstatSync(fd).size;
+    fd = fs13.openSync(file, "r");
+    const size = fs13.fstatSync(fd).size;
     const len = Math.min(size, bytes);
     const buf = Buffer.alloc(len);
-    fs12.readSync(fd, buf, 0, len, size - len);
+    fs13.readSync(fd, buf, 0, len, size - len);
     const lines = buf.toString("utf8").split("\n");
     if (len < size) lines.shift();
     return lines.filter(Boolean);
   } catch {
     return [];
   } finally {
-    if (fd !== void 0) fs12.closeSync(fd);
+    if (fd !== void 0) fs13.closeSync(fd);
   }
 }
 function lastAssistant(file) {
@@ -1746,21 +1819,21 @@ function inspectTranscript(transcript) {
   const q = last.quotaLimits ?? {};
   const refusedAt = Date.parse(last.timestamp ?? "") || 0;
   const cutAgents = [];
-  const sub = path10.join(transcript.replace(/\.jsonl$/, ""), "subagents");
+  const sub = path11.join(transcript.replace(/\.jsonl$/, ""), "subagents");
   try {
-    for (const f of fs12.readdirSync(sub)) {
+    for (const f of fs13.readdirSync(sub)) {
       if (!f.endsWith(".jsonl")) continue;
-      const a = lastAssistant(path10.join(sub, f));
-      const tail = tailLines(path10.join(sub, f), 64 * 1024).slice(-3).join("\n");
+      const a = lastAssistant(path11.join(sub, f));
+      const tail = tailLines(path11.join(sub, f), 64 * 1024).slice(-3).join("\n");
       const refused = a?.isApiErrorMessage && a.error === "rate_limit" || /"error":"rate_limit"/.test(tail);
       if (!refused) continue;
-      const meta = readJson(path10.join(sub, f.replace(/\.jsonl$/, ".meta.json")), null);
+      const meta = readJson(path11.join(sub, f.replace(/\.jsonl$/, ".meta.json")), null);
       cutAgents.push(meta?.description ?? f.replace(/\.jsonl$/, ""));
     }
   } catch {
   }
   return {
-    sessionId: last.sessionId ?? path10.basename(transcript, ".jsonl"),
+    sessionId: last.sessionId ?? path11.basename(transcript, ".jsonl"),
     cwd: last.cwd ?? "",
     transcript,
     limitType: q.status === "rejected" ? q.rateLimitType : void 0,
@@ -1773,12 +1846,12 @@ function findTranscript(cfg, sessionId) {
   for (const store of projectStores(cfg)) {
     let dirs = [];
     try {
-      dirs = fs12.readdirSync(store);
+      dirs = fs13.readdirSync(store);
     } catch {
     }
     for (const d of dirs) {
-      const f = path10.join(store, d, `${sessionId}.jsonl`);
-      if (fs12.existsSync(f)) return f;
+      const f = path11.join(store, d, `${sessionId}.jsonl`);
+      if (fs13.existsSync(f)) return f;
     }
   }
   return void 0;
@@ -1790,20 +1863,20 @@ function stuckSessions(cfg) {
   for (const store of projectStores(cfg)) {
     let dirs = [];
     try {
-      dirs = fs12.readdirSync(store);
+      dirs = fs13.readdirSync(store);
     } catch {
     }
     for (const d of dirs) {
       let files = [];
       try {
-        files = fs12.readdirSync(path10.join(store, d)).filter((f) => f.endsWith(".jsonl"));
+        files = fs13.readdirSync(path11.join(store, d)).filter((f) => f.endsWith(".jsonl"));
       } catch {
       }
       for (const f of files) {
-        const full = path10.join(store, d, f);
+        const full = path11.join(store, d, f);
         let mtime = 0;
         try {
-          mtime = fs12.statSync(full).mtimeMs;
+          mtime = fs13.statSync(full).mtimeMs;
         } catch {
         }
         if (Date.now() - mtime > RECENT_MS) continue;
@@ -1828,7 +1901,7 @@ function stuckSessions(cfg) {
   return [...seen.values()].filter((s) => s.pid || !s.resetsAt || s.resetsAt > nowS()).filter((s) => (readJson(paths.session(s.sessionId), null)?.updatedAt ?? 0) <= s.refusedAt).sort((a, b) => b.refusedAt - a.refusedAt);
 }
 function profileOf(cfg, s) {
-  const byDir = s.configDir ? cfg.profiles.find((p) => path10.resolve(p.configDir) === path10.resolve(s.configDir)) : void 0;
+  const byDir = s.configDir ? cfg.profiles.find((p) => path11.resolve(p.configDir) === path11.resolve(s.configDir)) : void 0;
   return byDir ?? cfg.profiles.find((p) => p.isMain) ?? cfg.profiles[0];
 }
 function rescuePrompt(s, from, to, model, note) {
@@ -1872,9 +1945,9 @@ async function rescue(opts) {
   let list = stuckSessions(cfg);
   const real2 = (p) => {
     try {
-      return fs12.realpathSync(p);
+      return fs13.realpathSync(p);
     } catch {
-      return path10.resolve(p);
+      return path11.resolve(p);
     }
   };
   const here = real2(process.cwd());
@@ -1892,7 +1965,7 @@ async function rescue(opts) {
   }
   const s = opts.index !== void 0 ? list[opts.index - 1] : list[0];
   if (!s) throw new UserError(`no stuck session #${opts.index}`);
-  if (!s.cwd || !fs12.existsSync(s.cwd)) throw new UserError(`the folder of session ${s.sessionId} (${s.cwd || "unknown"}) no longer exists.`);
+  if (!s.cwd || !fs13.existsSync(s.cwd)) throw new UserError(`the folder of session ${s.sessionId} (${s.cwd || "unknown"}) no longer exists.`);
   const from = profileOf(cfg, s);
   if (s.resetsAt && s.resetsAt > nowS())
     mutateUsage((u) => {
@@ -1934,22 +2007,22 @@ No other account can take it now (${next2.reason})${next2.waitUntil ? `; the fir
   });
 }
 
-import fs13 from "node:fs";
-import path11 from "node:path";
+import fs14 from "node:fs";
+import path12 from "node:path";
 var MARKER = "julius2claude-shim";
 function shimDir() {
   if (process.env.J2C_SHIM_DIR) return process.env.J2C_SHIM_DIR;
-  return path11.dirname(process.argv[1] ?? process.execPath);
+  return path12.dirname(process.argv[1] ?? process.execPath);
 }
 function shimPath(dir, profile) {
-  return path11.join(dir, process.platform === "win32" ? `claude-${profile}.cmd` : `claude-${profile}`);
+  return path12.join(dir, process.platform === "win32" ? `claude-${profile}.cmd` : `claude-${profile}`);
 }
 function body(dir, profile) {
   if (process.platform === "win32") return `@echo off\r
 rem ${MARKER}\r
 j2c -P ${profile} %*\r
 `;
-  const j2c = fs13.existsSync(path11.join(dir, "j2c")) ? path11.join(dir, "j2c") : "j2c";
+  const j2c = fs14.existsSync(path12.join(dir, "j2c")) ? path12.join(dir, "j2c") : "j2c";
   return `#!/bin/sh
 # ${MARKER}
 exec "${j2c}" -P ${profile} "$@"
@@ -1957,7 +2030,7 @@ exec "${j2c}" -P ${profile} "$@"
 }
 function ours(file) {
   try {
-    return fs13.readFileSync(file, "utf8").includes(MARKER);
+    return fs14.readFileSync(file, "utf8").includes(MARKER);
   } catch {
     return false;
   }
@@ -1967,19 +2040,19 @@ function syncShims(cfg, dir = shimDir()) {
   const wanted = new Set(cfg.profiles.map((p) => shimPath(dir, p.name)));
   for (const p of cfg.profiles) {
     const file = shimPath(dir, p.name);
-    if (fs13.existsSync(file) && !ours(file)) {
+    if (fs14.existsSync(file) && !ours(file)) {
       res.skipped.push(file);
       continue;
     }
     const content = body(dir, p.name);
     let cur = "";
     try {
-      cur = fs13.readFileSync(file, "utf8");
+      cur = fs14.readFileSync(file, "utf8");
     } catch {
     }
     if (cur !== content) {
       try {
-        fs13.writeFileSync(file, content, { mode: 493 });
+        fs14.writeFileSync(file, content, { mode: 493 });
         res.created.push(file);
       } catch {
         res.skipped.push(file);
@@ -1988,13 +2061,13 @@ function syncShims(cfg, dir = shimDir()) {
   }
   let names = [];
   try {
-    names = fs13.readdirSync(dir).filter((n) => n.startsWith("claude-"));
+    names = fs14.readdirSync(dir).filter((n) => n.startsWith("claude-"));
   } catch {
   }
   for (const n of names) {
-    const file = path11.join(dir, n);
+    const file = path12.join(dir, n);
     if (!wanted.has(file) && ours(file)) {
-      fs13.rmSync(file, { force: true });
+      fs14.rmSync(file, { force: true });
       res.removed.push(file);
     }
   }
@@ -2004,13 +2077,13 @@ function removeAllShims(dir = shimDir()) {
   const removed = [];
   let names = [];
   try {
-    names = fs13.readdirSync(dir).filter((n) => n.startsWith("claude-"));
+    names = fs14.readdirSync(dir).filter((n) => n.startsWith("claude-"));
   } catch {
   }
   for (const n of names) {
-    const file = path11.join(dir, n);
+    const file = path12.join(dir, n);
     if (ours(file)) {
-      fs13.rmSync(file, { force: true });
+      fs14.rmSync(file, { force: true });
       removed.push(file);
     }
   }
@@ -2049,6 +2122,8 @@ Every day:
   j2c use <name>                  set the default account (inside Claude: /j2c:use <name>)
   j2c next                        inside Claude: /j2c:next
   j2c order <a> <b> ...           failover order
+  j2c notify on|off|test [--webhook URL]  desktop/webhook notifications for switches and limits
+  j2c pause <name> | resume <name>  take a profile out of (or back into) the automatic rotation
   j2c bind <name> [dir] [--strict]  always use <name> in dir (strict: never any other)
   j2c unbind [dir]
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
@@ -2078,7 +2153,7 @@ function parse(argv, valueFlags = []) {
 }
 var str = (v) => typeof v === "string" ? v : void 0;
 function requireSetup() {
-  if (!fs14.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
+  if (!fs15.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
   return loadConfig();
 }
 async function main(argv) {
@@ -2130,6 +2205,11 @@ async function main(argv) {
       return next(rest);
     case "order":
       return order(rest);
+    case "notify":
+      return notifyCmd(rest);
+    case "pause":
+    case "resume":
+      return pauseProfile(rest[0], cmd === "pause");
     case "bind":
       return bind(rest);
     case "unbind":
@@ -2174,7 +2254,7 @@ async function launch(argv) {
   return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
 function reportShims(r, verbose) {
-  for (const f of r.created) console.log(`  command: ${path12.basename(f).replace(/\.cmd$/, "")}`);
+  for (const f of r.created) console.log(`  command: ${path13.basename(f).replace(/\.cmd$/, "")}`);
   for (const f of r.skipped) if (verbose) console.log(`  ! ${f} exists and is not a julius2claude command; left untouched`);
 }
 function shims(argv) {
@@ -2191,7 +2271,7 @@ function shims(argv) {
   return 0;
 }
 function setup() {
-  const existed = fs14.existsSync(paths.config());
+  const existed = fs15.existsSync(paths.config());
   const cfg = loadConfig();
   const mainP = cfg.profiles.find((p) => p.isMain);
   if (mainP) {
@@ -2204,7 +2284,7 @@ function setup() {
   const v = claudeVersion();
   console.log(existed ? "julius2claude is already set up; refreshed." : "julius2claude is set up.");
   console.log(`  config:   ${paths.config()}`);
-  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path12.dirname(files[0])})`);
+  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path13.dirname(files[0])})`);
   if (mainP?.account?.email) console.log(`  main:     ${mainP.account.email}${mainP.account.org ? ` (${mainP.account.org})` : ""}`);
   if (!v) console.log("  \u26A0 `claude` was not found on PATH. Install Claude Code: https://code.claude.com");
   else if (!versionAtLeast(v, "2.1.152")) console.log(`  \u26A0 Claude Code ${v} is old; run \`claude update\`.`);
@@ -2271,10 +2351,10 @@ function add2(argv) {
   ensureProfileDir(profile);
   reportShims(syncShims(cfgAfter), false);
   if (provider === "apikey") {
-    const file = path12.join(profile.configDir, "settings.json");
-    const s = JSON.parse(fs14.readFileSync(file, "utf8"));
+    const file = path13.join(profile.configDir, "settings.json");
+    const s = JSON.parse(fs15.readFileSync(file, "utf8"));
     s.apiKeyHelper = str(f["api-key-helper"]);
-    fs14.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
+    fs15.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
   }
   console.log(`Added profile "${name}" (${provider}${group ? `, group ${group}` : ""}).`);
   if (PAID.has(provider)) {
@@ -2316,8 +2396,8 @@ function remove(argv) {
   });
   syncShims(cfgAfter);
   if (p.flags.purge) {
-    for (const e of fs14.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs14.unlinkSync(path12.join(prof.configDir, e.name));
-    fs14.rmSync(prof.configDir, { recursive: true, force: true });
+    for (const e of fs15.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs15.unlinkSync(path13.join(prof.configDir, e.name));
+    fs15.rmSync(prof.configDir, { recursive: true, force: true });
     console.log(`Removed "${name}" and its folder. Its login was not revoked; sign out at claude.ai if you want that.`);
   } else console.log(`Removed "${name}". Its folder is kept at ${prof.configDir}.`);
   return 0;
@@ -2352,6 +2432,7 @@ function status(argv) {
       reason: v.reason ?? null,
       availableAt: v.availableAt ?? null,
       sessions: runs.filter((r) => r.profile === p.name).length,
+      paused: !!p.paused,
       default: cfg.active === p.name,
       thisSession: current?.profile === p.name
     };
@@ -2441,6 +2522,38 @@ function next(argv) {
   }
   return 0;
 }
+async function notifyCmd(argv) {
+  requireSetup();
+  const p = parse(argv, ["webhook"]);
+  const mode = p._[0];
+  if (mode === "test") {
+    await notify("test", "julius2claude", "Notifications work.", true);
+    console.log("Sent a test notification.");
+    return 0;
+  }
+  if (mode !== "on" && mode !== "off") throw new UserError("usage: j2c notify on|off|test [--webhook <url>] [--no-webhook]");
+  const hook = str(p.flags.webhook);
+  if (hook && !/^https:\/\//.test(hook)) throw new UserError("--webhook must be an https:// URL");
+  const cfg = mutateConfig((c) => {
+    c.notify = { ...c.notify ?? { enabled: false }, enabled: mode === "on" };
+    if (hook) c.notify.webhook = hook;
+    if (p.flags["no-webhook"]) delete c.notify.webhook;
+  });
+  console.log(mode === "on" ? `Notifications on${cfg.notify?.webhook ? " (system + webhook)" : ""}: account switches, every account at its limit, logins that need attention.` : "Notifications off.");
+  return 0;
+}
+function pauseProfile(name, paused) {
+  const cfg = requireSetup();
+  if (!name) throw new UserError(`usage: j2c ${paused ? "pause" : "resume"} <profile>`);
+  getProfile(cfg, name);
+  mutateConfig((c) => {
+    const p = getProfile(c, name);
+    if (paused) p.paused = true;
+    else delete p.paused;
+  });
+  console.log(paused ? `"${name}" is out of the automatic rotation. It still starts with j2c -P ${name}.` : `"${name}" is back in the automatic rotation.`);
+  return 0;
+}
 function order(argv) {
   const cfg = requireSetup();
   for (const n of argv) getProfile(cfg, n);
@@ -2454,7 +2567,7 @@ function bind(argv) {
   const [name, dirArg] = p._;
   if (!name) throw new UserError("usage: j2c bind <profile> [dir] [--strict]");
   getProfile(cfg, name);
-  const dir = fs14.realpathSync(path12.resolve(dirArg ?? "."));
+  const dir = fs15.realpathSync(path13.resolve(dirArg ?? "."));
   mutateConfig((c) => {
     c.bindings = c.bindings.filter((b) => b.dir !== dir);
     c.bindings.push({ dir, profile: name, ...p.flags.strict ? { strict: true } : {} });
@@ -2464,7 +2577,7 @@ function bind(argv) {
 }
 function unbind(argv) {
   requireSetup();
-  const dir = fs14.realpathSync(path12.resolve(argv[0] ?? "."));
+  const dir = fs15.realpathSync(path13.resolve(argv[0] ?? "."));
   mutateConfig((c) => void (c.bindings = c.bindings.filter((b) => b.dir !== dir)));
   console.log(`${dir} is no longer bound.`);
   return 0;
@@ -2498,7 +2611,7 @@ function auto(argv) {
 }
 async function recover(argv) {
   const cfg = requireSetup();
-  const list = interruptedSessions().filter((s2) => fs14.existsSync(s2.cwd));
+  const list = interruptedSessions().filter((s2) => fs15.existsSync(s2.cwd));
   if (!list.length) {
     console.log("No interrupted sessions. \u{1F389}");
     return 0;
@@ -2551,6 +2664,7 @@ function usageView(argv) {
     const u = usage[p.name];
     const v = usable(cfg, usage, p);
     const tags = [
+      p.paused ? "paused" : "",
       current?.profile === p.name ? "this session" : "",
       cfg.active === p.name ? "default" : "",
       runs.filter((r) => r.profile === p.name).length ? `${runs.filter((r) => r.profile === p.name).length} running` : ""
@@ -2625,10 +2739,10 @@ function doctor() {
   if (leaks.length) warn(`${leaks.join(", ")} set in your shell: plain \`claude\` would use it instead of your login. j2c removes it for its sessions (use --keep-env to keep it).`);
   else ok("no auth overrides in your shell");
   if (process.env.CLAUDE_CONFIG_DIR) warn(`CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR} is set in your shell; j2c ignores it and uses each profile's own folder.`);
-  const dotenv = path12.join(process.cwd(), ".env");
-  if (fs14.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs14.readFileSync(dotenv, "utf8")))
+  const dotenv = path13.join(process.cwd(), ".env");
+  if (fs15.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs15.readFileSync(dotenv, "utf8")))
     warn(".env in this folder defines an Anthropic key; some tools load it automatically and bill it instead of your plan.");
-  if (fs14.existsSync(path12.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
+  if (fs15.existsSync(path13.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
   else bad("/j2c:* commands missing (run `j2c setup`)");
   console.log("Profiles");
   for (const p of ordered(cfg)) {
@@ -2639,11 +2753,11 @@ function doctor() {
     if (st === "ok" && cred?.refreshTokenExpiresAt && cred.refreshTokenExpiresAt - Date.now() < 3 * 864e5)
       warn(`${p.name}: login expires ${new Date(cred.refreshTokenExpiresAt).toLocaleDateString()}; start one session on it (\`j2c -P ${p.name}\`) to renew it`);
     if (!p.isMain) {
-      if (!fs14.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
+      if (!fs15.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
       else {
-        const link = path12.join(p.configDir, "projects");
+        const link = path13.join(p.configDir, "projects");
         try {
-          if (!fs14.lstatSync(link).isSymbolicLink() || fs14.realpathSync(link) !== fs14.realpathSync(path12.join(groupStore(p.group), "projects")))
+          if (!fs15.lstatSync(link).isSymbolicLink() || fs15.realpathSync(link) !== fs15.realpathSync(path13.join(groupStore(p.group), "projects")))
             issues.push("history folder not shared (will be repaired on next launch)");
         } catch {
           issues.push("history folder missing (will be repaired on next launch)");
@@ -2664,14 +2778,14 @@ function doctor() {
   if (process.env.WSL_DISTRO_NAME && paths.config().startsWith("/mnt/"))
     bad(`julius2claude data is on the Windows drive (${paths.config()}); links there break. Keep J2C_HOME inside the Linux home.`);
   const stale = defaultClaudeJson();
-  if (!fs14.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
+  if (!fs15.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
   console.log(problems ? `
 ${problems} problem(s) found.` : "\nAll good.");
   return problems ? 1 : 0;
 }
 var isEntry = (() => {
   try {
-    return fs14.realpathSync(process.argv[1] ?? "") === fs14.realpathSync(new URL(import.meta.url).pathname);
+    return fs15.realpathSync(process.argv[1] ?? "") === fs15.realpathSync(new URL(import.meta.url).pathname);
   } catch {
     return false;
   }

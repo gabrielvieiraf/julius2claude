@@ -10,6 +10,7 @@ import { type Run, BOUNDARY_MS, liveRuns, loadRun, mutateRun, removeRun, saveRun
 import { log, readJson, writeJson } from "./store.js";
 import { loadUsage, mutateUsage, nowS } from "./usage.js";
 import { recordEvent } from "./stats.js";
+import { notify } from "./notify.js";
 import { claudeBin, claudeVersion, descendants, restoreTty, saveTty, signal, versionAtLeast } from "./proc.js";
 import { alive } from "./runs.js";
 
@@ -219,6 +220,7 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
       const crossOrg = !!fromOrg && !!toOrg && fromOrg !== toOrg;
       mutateRun(run.id, (r) => void (r.lastSwitch = { from, to: profile.name, reason: pending.reason, at: Date.now(), fromOrg, toOrg }));
       say(`${from} → ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session…" : ""}`);
+      void notify(`switch:${run.id}:${Date.now()}`, `julius2claude: ${from} → ${profile.name}`, `${pending.reason}. The session continues on ${profile.name}.`);
       if (crossOrg && !cfgNow.bindings.some((b) => b.strict))
         say(`${profile.name} belongs to another organization (${toOrg}). Company isolation is off, so the session moved there. To keep a folder on one account: j2c bind <profile> <folder> --strict`);
       recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
@@ -349,6 +351,7 @@ async function waitForReset(cfg: Config, from: Profile, cwd: string, until: numb
     say("every eligible account is blocked and none has a known reset time. Run `j2c status` to see why.");
     return undefined;
   }
+  void notify(`exhausted:${until}`, "julius2claude: every account is at its limit", `The session resumes at ${new Date(until * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}.`);
   say(`every eligible account is at its limit. Waiting until ${new Date(until * 1000).toLocaleTimeString()} to resume (Ctrl+C to stop).`);
   let cancelled = false;
   const onInt = () => (cancelled = true);

@@ -11,6 +11,7 @@ export interface Profile {
   account?: { email?: string; org?: string; plan?: string; uuid?: string };
   isMain?: boolean;
   group?: string;
+  paused?: boolean;
 }
 
 export interface Binding {
@@ -34,6 +35,7 @@ export interface Config {
   active: string;
   bindings: Binding[];
   autoSwitch: AutoSwitch;
+  notify?: { enabled: boolean; webhook?: string };
 }
 
 export const PAID: ReadonlySet<Provider> = new Set(["bedrock", "vertex", "foundry", "apikey"]);

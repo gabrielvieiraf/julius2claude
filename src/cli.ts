@@ -15,6 +15,7 @@ import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
 import { rescue } from "./rescue.js";
+import { notify } from "./notify.js";
 import { removeAllShims, shimDir, syncShims } from "./shims.js";
 import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
@@ -55,6 +56,8 @@ Every day:
   j2c use <name>                  set the default account (inside Claude: /j2c:use <name>)
   j2c next                        inside Claude: /j2c:next
   j2c order <a> <b> ...           failover order
+  j2c notify on|off|test [--webhook URL]  desktop/webhook notifications for switches and limits
+  j2c pause <name> | resume <name>  take a profile out of (or back into) the automatic rotation
   j2c bind <name> [dir] [--strict]  always use <name> in dir (strict: never any other)
   j2c unbind [dir]
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
@@ -145,6 +148,11 @@ export async function main(argv: string[]): Promise<number> {
       return next(rest);
     case "order":
       return order(rest);
+    case "notify":
+      return notifyCmd(rest);
+    case "pause":
+    case "resume":
+      return pauseProfile(rest[0], cmd === "pause");
     case "bind":
       return bind(rest);
     case "unbind":
@@ -376,6 +384,7 @@ function status(argv: string[]): number {
       reason: v.reason ?? null,
       availableAt: v.availableAt ?? null,
       sessions: runs.filter((r) => r.profile === p.name).length,
+      paused: !!p.paused,
       default: cfg.active === p.name,
       thisSession: current?.profile === p.name,
     };
@@ -463,6 +472,40 @@ function next(argv: string[]): number {
     mutateConfig((c) => void (c.active = pick.profile!.name));
     console.log(`"${pick.profile.name}" is now the default for new sessions.`);
   }
+  return 0;
+}
+
+async function notifyCmd(argv: string[]): Promise<number> {
+  requireSetup();
+  const p = parse(argv, ["webhook"]);
+  const mode = p._[0];
+  if (mode === "test") {
+    await notify("test", "julius2claude", "Notifications work.", true);
+    console.log("Sent a test notification.");
+    return 0;
+  }
+  if (mode !== "on" && mode !== "off") throw new UserError("usage: j2c notify on|off|test [--webhook <url>] [--no-webhook]");
+  const hook = str(p.flags.webhook);
+  if (hook && !/^https:\/\//.test(hook)) throw new UserError("--webhook must be an https:// URL");
+  const cfg = mutateConfig((c) => {
+    c.notify = { ...(c.notify ?? { enabled: false }), enabled: mode === "on" };
+    if (hook) c.notify.webhook = hook;
+    if (p.flags["no-webhook"]) delete c.notify.webhook;
+  });
+  console.log(mode === "on" ? `Notifications on${cfg.notify?.webhook ? " (system + webhook)" : ""}: account switches, every account at its limit, logins that need attention.` : "Notifications off.");
+  return 0;
+}
+
+function pauseProfile(name: string | undefined, paused: boolean): number {
+  const cfg = requireSetup();
+  if (!name) throw new UserError(`usage: j2c ${paused ? "pause" : "resume"} <profile>`);
+  getProfile(cfg, name);
+  mutateConfig((c) => {
+    const p = getProfile(c, name);
+    if (paused) p.paused = true;
+    else delete p.paused;
+  });
+  console.log(paused ? `"${name}" is out of the automatic rotation. It still starts with j2c -P ${name}.` : `"${name}" is back in the automatic rotation.`);
   return 0;
 }
 
@@ -582,6 +625,7 @@ function usageView(argv: string[]): number {
     const u = usage[p.name];
     const v = usable(cfg, usage, p);
     const tags = [
+      p.paused ? "paused" : "",
       current?.profile === p.name ? "this session" : "",
       cfg.active === p.name ? "default" : "",
       runs.filter((r) => r.profile === p.name).length ? `${runs.filter((r) => r.profile === p.name).length} running` : "",

@@ -452,3 +452,11 @@ test("a resumed session keeps the permission mode, effort and model it had befor
   assert.deepEqual(sup.liveFlags(["--model", "sonnet"], { model: "claude-opus-5-5" }, false), ["--model", "sonnet"], "model ids don't carry across providers");
   assert.deepEqual(sup.liveFlags([], { permissionMode: "default" }, true), []);
 });
+
+test("a paused profile is never picked automatically, but still starts when asked by name", () => {
+  const cfg = rcfg([{ name: "corp", provider: "claude", paused: true }, { name: "alt", provider: "claude" }]);
+  assert.equal(router.pickNext(cfg, {}, cfg.profiles[0], "/x").profile.name, "alt");
+  cfg.active = "corp";
+  assert.equal(router.pickStart(cfg, {}, "/x").profile.name, "main");
+  assert.equal(router.pickStart(cfg, {}, "/x", "corp").profile.name, "corp");
+});

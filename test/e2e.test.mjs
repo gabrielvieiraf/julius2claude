@@ -490,3 +490,23 @@ test("per-profile commands: claude-<profile> starts that profile, foreign comman
     sb.cleanup();
   }
 });
+
+test("notifications: a switch notifies only when notifications are on", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["auto", "on"]);
+    const file = path.join(sb.root, "notes.jsonl");
+    const plan = JSON.stringify({ main: ["turn:10", "limit", "wait"], work: ["exit"] });
+    await sb.j2cAsync([], { J2C_NOTIFY_FILE: file, FAKE_PLAN: plan });
+    assert.ok(!fs.existsSync(file), "off by default");
+    sb.j2c(["notify", "on"]);
+    fs.rmSync(path.join(sb.env.J2C_HOME, "state", "usage.json"), { force: true });
+    await sb.j2cAsync([], { J2C_NOTIFY_FILE: file, FAKE_ID: sb.env.FAKE_ID + "-2", FAKE_PLAN: plan });
+    const notes = fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(notes.some((n) => /main → work/.test(n.title)), JSON.stringify(notes));
+    assert.match(sb.j2c(["notify", "on", "--webhook", "http://insecure"]).err, /https/);
+  } finally {
+    sb.cleanup();
+  }
+});

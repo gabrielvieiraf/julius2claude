@@ -5,6 +5,7 @@ import { shouldLeave } from "./router.js";
 import { loadRun, mutateRun, recordSession, type Run } from "./runs.js";
 import { log } from "./store.js";
 import { ingestTranscript, recordEvent } from "./stats.js";
+import { notify } from "./notify.js";
 import { findQuotaRefusal, loadUsage, mutateUsage, nowS, type QuotaRefusal } from "./usage.js";
 
 const HARD_ERRORS: Record<string, string> = {
@@ -102,7 +103,7 @@ function record(run: Run, sessionId: string, state: "busy" | "idle" | "ended", t
   });
 }
 
-function onStopFailure(run: Run, data: any): void {
+async function onStopFailure(run: Run, data: any): Promise<void> {
   const error: string = data.error ?? data.error_type ?? "unknown";
   const now = Date.now();
   ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
@@ -117,6 +118,7 @@ function onStopFailure(run: Run, data: any): void {
   let hard = false;
   if (HARD_ERRORS[error]) {
     hard = true;
+    await notify(`auth:${run.profile}:${error}`, `julius2claude: ${run.profile} needs attention`, HARD_ERRORS[error].replace("<profile>", run.profile));
     mutateUsage((u) => {
       const cur = (u[run.profile] ??= {});
       cur.blocks = [...(cur.blocks ?? []), { until: 0, reason: HARD_ERRORS[error], type: "auth" }];

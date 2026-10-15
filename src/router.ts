@@ -54,6 +54,7 @@ export function pickNext(cfg: Config, usage: UsageState, from: Profile | undefin
   const candidates = ordered(cfg).filter(
     (p) =>
       p.name !== from?.name &&
+      !p.paused &&
       allowed.has(p.name) &&
       (p.group ?? "default") === group &&
       (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid),
@@ -90,6 +91,10 @@ export function pickStart(cfg: Config, usage: UsageState, cwd: string, explicit?
   }
   const b = bindingFor(cfg, cwd);
   const preferred = cfg.profiles.find((p) => p.name === (b?.profile ?? cfg.active)) ?? cfg.profiles[0];
+  if (preferred.paused && !b) {
+    const next = pickNext(cfg, usage, preferred, cwd);
+    if (next.profile) return next;
+  }
   if (!cfg.autoSwitch.enabled || usable(cfg, usage, preferred).ok) return { profile: preferred, bound: !!b };
   const next = pickNext(cfg, usage, preferred, cwd);
   return next.profile ? next : { profile: preferred, bound: !!b, ...next };
