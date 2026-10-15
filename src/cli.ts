@@ -14,6 +14,7 @@ import { bindingFor, pickNext, usable } from "./router.js";
 import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs.js";
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
+import { rescue } from "./rescue.js";
 import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
 import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
@@ -58,6 +59,8 @@ Every day:
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
   j2c usage                       visual usage of every account (bars, resets, tokens)
   j2c stats [--days N] [--json]   tokens per account and how long each took to reach its limits
+  j2c rescue [n] [--model sonnet] move a session stuck at a limit (even one started with plain
+                                  claude) to the next account, in this terminal
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
 
@@ -149,6 +152,13 @@ export async function main(argv: string[]): Promise<number> {
       return auto(rest);
     case "recover":
       return recover(rest);
+    case "rescue": {
+      requireSetup();
+      const p = parse(rest, ["session", "to", "model", "note"]);
+      const n = p._[0] ? Number(p._[0]) : undefined;
+      if (n !== undefined && (!Number.isInteger(n) || n < 1)) throw new UserError("usage: j2c rescue [n] [--model sonnet] [--to <profile>] [--yes] [--list] [--all]");
+      return rescue({ index: n, session: str(p.flags.session), to: str(p.flags.to), model: str(p.flags.model), note: str(p.flags.note), yes: !!p.flags.yes, list: !!p.flags.list, all: !!p.flags.all });
+    }
     case "doctor":
       return doctor();
     case "stats":
@@ -367,7 +377,7 @@ function status(argv: string[]): number {
 function handOff(target: string, sessionId: string | undefined): void {
   const cmd = sessionId ? `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} --resume ${sessionId}` : `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} -c`;
   const copied = copyToClipboard(cmd);
-  console.log(`julius2claude: this session was not started with j2c, so it can't switch by itself. Run /exit and then${copied ? " paste (already copied)" : ""}:\n\n  ${cmd}\n\nThis reopens the same conversation on "${target}". Start future sessions with j2c (or alias claude=j2c) and switching happens on its own.`);
+  console.log(`julius2claude: this session was not started with j2c, so it can't switch by itself. Run /exit and then${copied ? " paste (already copied)" : ""}:\n\n  ${cmd}\n\nThis reopens the same conversation on "${target}". If this session is already blocked by a limit, run \`j2c rescue\` from any terminal instead. Start future sessions with j2c (or alias claude=j2c) and switching happens on its own.`);
 }
 
 function requestSwitch(to: string | undefined, reason: string): string {

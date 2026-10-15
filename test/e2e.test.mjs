@@ -409,3 +409,58 @@ test("interactive login in a terminal: c copies, o opens, and a pasted code fini
     sb.cleanup();
   }
 });
+
+test("j2c rescue: closes a plain-claude session stuck at its limit and resumes it on the next account, telling it which agents were cut", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    const { spawn } = await import("node:child_process");
+    const sid = "11111111-2222-3333-4444-555555555555";
+    const proj = path.join(sb.env.J2C_CLAUDE_DIR, "projects", sb.work.replace(/[^a-zA-Z0-9]/g, "-"));
+    fs.mkdirSync(path.join(proj, sid, "subagents"), { recursive: true });
+    const t = new Date().toISOString();
+    const refusal = { type: "assistant", sessionId: sid, cwd: sb.work, timestamp: t, isApiErrorMessage: true, error: "rate_limit", quotaLimits: { status: "rejected", rateLimitType: "seven_day", resetsAt: Math.floor(Date.now() / 1000) + 86400 }, message: { content: [{ type: "text", text: "You've hit your weekly limit" }] } };
+    fs.writeFileSync(path.join(proj, `${sid}.jsonl`), JSON.stringify({ type: "user", sessionId: sid, cwd: sb.work, timestamp: t, message: { content: "go" } }) + "\n" + JSON.stringify(refusal) + "\n");
+    fs.writeFileSync(path.join(proj, sid, "subagents", "agent-x.jsonl"), JSON.stringify({ ...refusal, isSidechain: true }) + "\n");
+    fs.writeFileSync(path.join(proj, sid, "subagents", "agent-x.meta.json"), JSON.stringify({ description: "Realtime collaboration" }));
+    const stuck = spawn(process.execPath, ["-e", "process.on('SIGINT',()=>process.exit(0));setInterval(()=>{},1000)"], { stdio: "ignore" });
+    fs.mkdirSync(path.join(sb.env.J2C_CLAUDE_DIR, "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(sb.env.J2C_CLAUDE_DIR, "sessions", `${stuck.pid}.json`), JSON.stringify({ pid: stuck.pid, sessionId: sid, cwd: sb.work, kind: "interactive" }));
+
+    const list = sb.j2c(["rescue", "--list"]);
+    assert.match(list.out, /account main · weekly limit/);
+    assert.match(list.out, /still open \(pid \d+\) · cut agents: Realtime collaboration/);
+
+    const exited = new Promise((r) => stuck.on("exit", r));
+    const r = await sb.j2cAsync(["rescue", "--yes", "--model", "sonnet"], { FAKE_PLAN: JSON.stringify({ work: ["exit"] }) });
+    assert.equal(r.code, 0, r.err + r.out);
+    await exited;
+    const start = sb.events().find((e) => e.event === "start");
+    assert.equal(start.profile, "work");
+    assert.equal(start.sessionId, sid);
+    assert.equal(start.cwd, sb.work);
+    assert.equal(start.args[start.args.indexOf("--model") + 1], "sonnet");
+    assert.match(start.prompt, /weekly limit on account "main" and was moved to "work"/);
+    assert.match(start.prompt, /"Realtime collaboration"/);
+    assert.match(start.prompt, /Use the sonnet model for everything, including agents/);
+    const usage = JSON.parse(sb.j2c(["status", "--json"]).out).profiles.find((p) => p.name === "main");
+    assert.equal(usage.usable, false, "main is recorded as blocked until its reset");
+    assert.match(sb.j2c(["rescue"]).out, /No session is stuck/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("j2c rescue ignores sessions whose limit already reset and sessions already supervised", () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    const proj = path.join(sb.env.J2C_CLAUDE_DIR, "projects", "p");
+    fs.mkdirSync(proj, { recursive: true });
+    const old = { type: "assistant", sessionId: "old", cwd: sb.work, timestamp: new Date().toISOString(), isApiErrorMessage: true, error: "rate_limit", quotaLimits: { status: "rejected", rateLimitType: "five_hour", resetsAt: Math.floor(Date.now() / 1000) - 60 } };
+    fs.writeFileSync(path.join(proj, "old.jsonl"), JSON.stringify(old) + "\n");
+    assert.match(sb.j2c(["rescue", "--all"]).out, /No session is stuck/);
+  } finally {
+    sb.cleanup();
+  }
+});
