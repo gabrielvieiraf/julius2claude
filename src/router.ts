@@ -77,6 +77,7 @@ export function pickNext(cfg: Config, usage: UsageState, from: Profile | undefin
 export function shouldLeave(cfg: Config, usage: UsageState, p: Profile, hardRefused: boolean, now = nowS()): boolean {
   if (hardRefused) return true;
   if (usable(cfg, usage, p, now).ok) return false;
+  if (activeBlocks(usage[p.name], now).length) return true;
   const entered = usage[p.name]?.enteredAt ?? 0;
   return Date.now() - entered >= cfg.autoSwitch.minDwellMin * 60_000;
 }
