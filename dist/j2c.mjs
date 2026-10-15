@@ -1683,7 +1683,7 @@ function bar(pct) {
   return "\u25B0".repeat(filled) + "\u25B1".repeat(5 - filled);
 }
 
-var VERSION = true ? "0.3.0" : "dev";
+var VERSION = true ? "0.2.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
 
