@@ -51,6 +51,19 @@ diretório.
 
 ## Instalação
 
+### Deixe o Claude Code configurar
+
+Abra o Claude Code e envie:
+
+```text
+Instale e configure o julius2claude para mim. Siga https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md
+```
+
+O Claude instala o pacote, pergunta quais contas você usa, envia um link de login para cada uma e
+finaliza a configuração. Você só entra na conta e cola o código exibido ao final de cada login.
+
+### Instalação manual
+
 ```bash
 npm install -g julius2claude
 ```
@@ -89,6 +102,7 @@ j2c add gcp --vertex --project my-project --region us-east5
 j2c add az --foundry --resource my-foundry
 j2c add api --api-key-helper "op read op://dev/anthropic/key"
 j2c login <perfil>                                   # fazer login novamente
+j2c login <perfil> --start | --code <código>         # login em duas etapas, usado por agentes de IA
 j2c remove <perfil> [--purge]
 ```
 

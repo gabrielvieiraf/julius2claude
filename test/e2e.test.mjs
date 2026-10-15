@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { sandbox, withAccounts } from "./helpers.mjs";
 
 const starts = (sb) => sb.events().filter((e) => e.event === "start");
@@ -197,6 +198,86 @@ test("status --json is stable for integrations", () => {
     const j = JSON.parse(sb.j2c(["status", "--json"]).out);
     assert.equal(j.schemaVersion, 1);
     assert.deepEqual(j.profiles.map((p) => [p.name, p.account, p.login]), [["main", "me@personal.dev", "ok"], ["work", "me@work.dev", "ok"]]);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("agent login: --start prints a link, --code finishes it and records the account", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, []);
+    sb.j2c(["add", "work", "--no-login"]);
+    const env = { FAKE_INTERACTIVE_LOGIN: "1", FAKE_ACCOUNT: "me@company.com", FAKE_ORG: "Company" };
+    const start = sb.j2c(["login", "work", "--start", "--json"], env);
+    assert.equal(start.code, 0, start.err);
+    const s = JSON.parse(start.out);
+    assert.equal(s.status, "waiting_for_code");
+    assert.match(s.url, /^https:\/\/claude\.example\/oauth/);
+    const bad = sb.j2c(["login", "work", "--code", "nope", "--json"], env);
+    assert.equal(bad.code, 1);
+    assert.equal(JSON.parse(bad.out).status, "failed");
+    sb.j2c(["login", "work", "--start"], env);
+    const ok = sb.j2c(["login", "work", "--code", "good-code", "--json"], env);
+    assert.equal(ok.code, 0, ok.err + ok.out);
+    const r = JSON.parse(ok.out);
+    assert.equal(r.status, "logged_in");
+    assert.equal(r.email, "me@company.com");
+    assert.equal(r.org, "Company");
+    const st = JSON.parse(sb.j2c(["status", "--json"]).out);
+    assert.deepEqual(st.profiles.find((p) => p.name === "work").login, "ok");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("agent login: `j2c add` run by an agent (no terminal) never hangs; it hands back the login link", () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, []);
+    const r = sb.j2c(["add", "work"], { FAKE_INTERACTIVE_LOGIN: "1" }, { timeout: 40_000 });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /Open this link/);
+    assert.match(r.out, /j2c login work --code/);
+    sb.j2c(["login", "work", "--cancel"]);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+function loginPidsAlive(sb) {
+  let pids = [];
+  try {
+    pids = fs.readFileSync(sb.env.FAKE_LOG + ".loginpids", "utf8").trim().split("\n").map(Number);
+  } catch {}
+  return pids.filter((p) => {
+    try {
+      process.kill(p, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+test("agent login: restarting or cancelling a login never leaves an orphaned `claude auth login` behind", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, []);
+    sb.j2c(["add", "work", "--no-login"]);
+    const env = { FAKE_INTERACTIVE_LOGIN: "1" };
+    sb.j2c(["login", "work", "--start"], env);
+    sb.j2c(["login", "work", "--start"], env);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(loginPidsAlive(sb).length, 1, "the first login was stopped when the second started");
+    sb.j2c(["login", "work", "--cancel"]);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(loginPidsAlive(sb).length, 0, "cancel stops the waiting login");
+    sb.j2c(["login", "work", "--start"], env);
+    const ok = sb.j2c(["login", "work", "--code", "good-code", "--json"], env);
+    assert.equal(JSON.parse(ok.out).status, "logged_in");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(loginPidsAlive(sb).length, 0);
   } finally {
     sb.cleanup();
   }

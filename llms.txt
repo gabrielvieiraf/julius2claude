@@ -19,6 +19,8 @@ Install and use:
 - Inside Claude Code: `/j2c:use <profile>`, `/j2c:next`, `/j2c:status`
 - `j2c status [--json]`, `j2c bind <profile> [dir] --strict`, `j2c recover`, `j2c doctor`
 
+Setting it up for a user (AI agents): follow https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md . Logins are two-step and non-interactive: `j2c login <name> --start --json` returns a URL for the user; the user pastes the code shown at the end; `j2c login <name> --code <code> --json` finishes it.
+
 How it works: one CLAUDE_CONFIG_DIR per account (credentials never copied), shared history via directory links, usage from the statusLine `rate_limits` field, hard limits from `quotaLimits` in the transcript, and a supervisor that stops `claude` at a turn boundary and runs `claude --resume <session>` on the next account. Platforms: Linux, WSL2, macOS (beta), Windows (experimental).
 
 Responsible use: only with accounts that belong to the user; automatic switching is off by default. Not affiliated with Anthropic.
@@ -27,4 +29,5 @@ Responsible use: only with accounts that belong to the user; automatic switching
 - [README (English)](https://github.com/gabrielvieiraf/julius2claude/blob/main/README.md)
 - [README (Português)](https://github.com/gabrielvieiraf/julius2claude/blob/main/README.pt-BR.md)
 - [Failure modes and the test that covers each](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/FAILURE-MODES.md)
+- [Setup guide for AI agents](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md)
 - [Architecture for contributors and coding agents](https://github.com/gabrielvieiraf/julius2claude/blob/main/AGENTS.md)

@@ -18,6 +18,19 @@ if (args[0] === "--version") {
 }
 
 if (args[0] === "auth" && args[1] === "login") {
+  if (env.FAKE_INTERACTIVE_LOGIN === "1") {
+    if (env.FAKE_LOG) fs.appendFileSync(env.FAKE_LOG + ".loginpids", process.pid + "\n");
+    process.stdout.write("Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.example/oauth/authorize?code=true&state=abc\nPaste code here if prompted > ");
+    let input = "";
+    for await (const chunk of process.stdin) {
+      input += chunk;
+      if (input.includes("\n")) break;
+    }
+    if (input.trim() !== "good-code") {
+      console.error("OAuth error: Invalid code");
+      process.exit(1);
+    }
+  }
   const email = env.FAKE_ACCOUNT || "someone@example.com";
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, ".credentials.json"), JSON.stringify({

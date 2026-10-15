@@ -6,6 +6,7 @@ import {
   getProfile, loadConfig, mutateConfig, ordered, saveConfig,
 } from "./config.js";
 import { runHook } from "./hooks.js";
+import { cancelLogin, loginEnv, loginWorker, recordLogin, startLogin, submitCode } from "./login.js";
 import { paths, defaultClaudeDir, defaultClaudeJson } from "./paths.js";
 import { claudeBin, claudeVersion, versionAtLeast } from "./proc.js";
 import { ensureProfileDir, groupStore, loginState, readCredentials, readIdentity } from "./profiles.js";
@@ -13,7 +14,7 @@ import { bindingFor, pickNext, usable } from "./router.js";
 import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs.js";
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
-import { AUTH_ENV_KEYS, buildEnv, supervise } from "./supervisor.js";
+import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
 import { livePct, loadUsage, mutateUsage, activeBlocks } from "./usage.js";
 
 declare const __VERSION__: string;
@@ -41,6 +42,7 @@ Setup:
       --group <name>                              data boundary (e.g. "work": its own history)
       --no-login                                  don't open the login now
   j2c login <name>                log a profile in (or back in)
+      --start / --code <code> / --cancel          two-step login for AI agents and scripts
   j2c remove <name> [--purge]     forget a profile (--purge also deletes its folder)
 
 Every day:
@@ -115,7 +117,12 @@ export async function main(argv: string[]): Promise<number> {
     case "add":
       return add(rest);
     case "login":
-      return login(rest[0]);
+      return login(rest);
+    case "__login-worker": {
+      const p = parse(rest, ["email"]);
+      await loginWorker(p._[0], str(p.flags.email));
+      return 0;
+    }
     case "remove":
     case "rm":
       return remove(rest);
@@ -183,12 +190,13 @@ Next:
   j2c                       # start Claude Code through julius2claude (same args as \`claude\`)
 
 Tip: alias claude=j2c  — if you want every session supervised.`);
+  if (!process.stdin.isTTY) console.log("\nAI agents: follow docs/AGENT-SETUP.md (https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md).");
   return 0;
 }
 
 function add(argv: string[]): number {
   const cfg0 = requireSetup();
-  const p = parse(argv, ["aws-profile", "region", "project", "resource", "api-key-helper", "env", "group", "model"]);
+  const p = parse(argv, ["aws-profile", "region", "project", "resource", "api-key-helper", "env", "group", "model", "email"]);
   const name = p._[0];
   if (!name || !NAME_RE.test(name)) throw new UserError("usage: j2c add <name> [options]  (name: lowercase letters, digits, - or _)");
   if (cfg0.profiles.some((x) => x.name === name)) throw new UserError(`profile "${name}" already exists.`);
@@ -254,34 +262,29 @@ function add(argv: string[]): number {
     console.log(`  Log in later with: j2c login ${name}`);
     return 0;
   }
-  return login(name);
+  return login([name, ...(str(f.email) ? ["--email", str(f.email)!] : []), ...(f.json ? ["--json"] : [])]);
 }
 
-function login(name: string | undefined): number {
-  const cfg = requireSetup();
-  if (!name) throw new UserError("usage: j2c login <profile>");
-  const p = getProfile(cfg, name);
-  if (p.provider !== "claude") throw new UserError(`"${name}" is a ${p.provider} profile; it uses your ${p.provider} credentials, not a Claude login.`);
-  ensureProfileDir(p);
-  const before = readIdentity(p);
-  const env = buildEnv(p, { id: "login", pid: process.pid, profile: p.name, cwd: process.cwd(), busy: false, startedAt: Date.now() });
-  delete env.J2C_RUN_ID;
-  console.log(`Logging "${name}" in. Pick the account you want for this profile in the browser.`);
-  const r = spawnSync(claudeBin(), ["auth", "login"], { stdio: "inherit", env });
+function login(argv: string[]): number {
+  requireSetup();
+  const p = parse(argv, ["code", "email"]);
+  const name = p._[0];
+  if (!name) throw new UserError("usage: j2c login <profile> [--start | --code <code>] [--email <email>] [--json]");
+  const json = !!p.flags.json;
+  if (p.flags.cancel) return cancelLogin(name);
+  if (p.flags.start) return startLogin(name, str(p.flags.email), json);
+  if (str(p.flags.code)) return submitCode(name, str(p.flags.code)!, json);
+  if (!process.stdin.isTTY) return startLogin(name, str(p.flags.email), json);
+  const prof = getProfile(loadConfig(), name);
+  if (prof.provider !== "claude") throw new UserError(`"${name}" is a ${prof.provider} profile; it uses your ${prof.provider} credentials, not a Claude login.`);
+  ensureProfileDir(prof);
+  const before = readIdentity(prof);
+  console.log(`Logging "${name}" in. Sign in with the account you want for this profile.`);
+  const r = spawnSync(claudeBin(), ["auth", "login", ...(str(p.flags.email) ? ["--email", str(p.flags.email)!] : [])], { stdio: "inherit", env: loginEnv(prof) });
   if (r.status !== 0) throw new UserError("login did not complete.");
-  const id = readIdentity(p);
-  if (before.uuid && id.uuid && (before.uuid !== id.uuid || before.orgUuid !== id.orgUuid))
-    console.log(`⚠ "${name}" was ${before.email} and is now ${id.email}.`);
-  const dup = cfg.profiles.find((o) => o.name !== name && o.account?.uuid && o.account.uuid === id.uuid && readIdentity(o).orgUuid === id.orgUuid);
-  if (dup) console.log(`⚠ This is the same account as "${dup.name}". That works, but it adds no extra capacity.`);
-  mutateConfig((c) => {
-    const x = getProfile(c, name);
-    x.account = { email: id.email, org: id.org, plan: id.plan, uuid: id.uuid };
-  });
-  mutateUsage((u) => {
-    if (u[name]) u[name].blocks = (u[name].blocks ?? []).filter((b) => b.type !== "auth");
-  });
-  console.log(`✓ ${name}: ${id.email ?? "logged in"}${id.org ? ` (${id.org})` : ""}`);
+  const res = recordLogin(name, before);
+  console.log(`✓ ${name}: ${res.email ?? "logged in"}${res.org ? ` (${res.org})` : ""}`);
+  for (const w of res.warnings) console.log(`! ${w}`);
   return 0;
 }
 

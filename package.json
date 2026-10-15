@@ -1,6 +1,6 @@
 {
   "name": "julius2claude",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Your Claude Code with two jobs: route Claude Code across your accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, API key) and fail over when a limit hits.",
   "license": "AGPL-3.0-only",
   "author": "Gabriel Vieira (https://github.com/gabrielvieiraf)",
@@ -37,7 +37,7 @@
     "node": ">=18.17"
   },
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/j2c.mjs --define:__VERSION__=\\\"0.1.0\\\" --banner:js=\"#!/usr/bin/env node\" && node -e \"require('fs').chmodSync('dist/j2c.mjs',0o755)\"",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/j2c.mjs --define:__VERSION__=\\\"0.2.0\\\" --banner:js=\"#!/usr/bin/env node\" && node -e \"require('fs').chmodSync('dist/j2c.mjs',0o755)\"",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && esbuild src/*.ts --outdir=.test-build --format=esm --platform=node --target=node18 --log-level=warning && node --test test/*.test.mjs",
     "prepublishOnly": "npm run typecheck && npm test"
