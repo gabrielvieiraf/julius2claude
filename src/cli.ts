@@ -21,7 +21,7 @@ declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === "string" ? __VERSION__ : "dev";
 export const SCHEMA_VERSION = 1;
 
-const HELP = `julius2claude (j2c) ${VERSION} — your Claude Code with two jobs.
+const HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
 
 Run Claude Code across your own accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, Foundry,
 API key) and move a session to the next account when one hits its limit — at the end of a turn,

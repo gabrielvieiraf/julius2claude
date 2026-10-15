@@ -1349,7 +1349,7 @@ function bar(pct) {
 // src/cli.ts
 var VERSION = true ? "0.2.0" : "dev";
 var SCHEMA_VERSION = 1;
-var HELP = `julius2claude (j2c) ${VERSION} \u2014 your Claude Code with two jobs.
+var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
 
 Run Claude Code across your own accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, Foundry,
 API key) and move a session to the next account when one hits its limit \u2014 at the end of a turn,
