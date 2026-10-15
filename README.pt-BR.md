@@ -5,7 +5,7 @@
 Roteamento entre várias contas e troca automática por limite de uso para o Claude Code.
 
 <p align="center">
-  <a href="https://tenor.com/view/money-terry-crews-spilled-milk-thrifty-gif-7197529"><img src="https://media1.tenor.com/m/x5fKOq1dsNYAAAAC/money-terry-crews.gif" alt="Julius de Todo Mundo Odeia o Chris: 49 centavos de leite derramado na minha mesa" width="480"></a>
+  <a href="https://tenor.com/view/money-terry-crews-spilled-milk-thrifty-gif-7197529"><img src="https://media.tenor.com/x5fKOq1dsNYAAAAC/money-terry-crews.gif" alt="Julius de Todo Mundo Odeia o Chris: 49 centavos de leite derramado na minha mesa" width="480"></a>
 </p>
 
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
