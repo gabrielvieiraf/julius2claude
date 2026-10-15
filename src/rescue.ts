@@ -231,6 +231,7 @@ export interface RescueOptions {
   yes?: boolean;
   list?: boolean;
   all?: boolean;
+  json?: boolean;
 }
 
 export async function rescue(opts: RescueOptions): Promise<number> {
@@ -247,6 +248,10 @@ export async function rescue(opts: RescueOptions): Promise<number> {
   if (!opts.all && !opts.session && list.some((s) => real(s.cwd) === here)) list = list.filter((s) => real(s.cwd) === here);
   if (opts.session) list = list.filter((s) => s.sessionId === opts.session);
 
+  if (opts.json) {
+    console.log(JSON.stringify({ schemaVersion: 1, sessions: list.map((s) => ({ ...s, account: profileOf(cfg, s).name })) }, null, 2));
+    return 0;
+  }
   if (!list.length) {
     console.log(opts.session ? `Session ${opts.session} is not stuck at a usage limit.` : "No session is stuck at a usage limit.");
     return 0;

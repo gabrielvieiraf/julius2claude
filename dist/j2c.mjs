@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import fs15 from "node:fs";
-import path13 from "node:path";
+import fs16 from "node:fs";
+import path14 from "node:path";
 
 import os from "node:os";
 import path from "node:path";
@@ -658,9 +658,9 @@ function loadEvents(sinceSec = 0) {
     }
   }).filter((e) => !!e && e.at >= sinceSec);
 }
-function windowStats(events) {
+function windowStats(events2) {
   const by = {};
-  for (const e of events) if (e.window) (by[e.window] ??= []).push(e);
+  for (const e of events2) if (e.window) (by[e.window] ??= []).push(e);
   const out = {};
   for (const [w, list] of Object.entries(by)) {
     const el = list.map((e) => e.elapsedSec).filter((x) => typeof x === "number");
@@ -675,9 +675,9 @@ function windowStats(events) {
 }
 function computeStats(profiles, sinceSec = 0, nowSec = Math.floor(Date.now() / 1e3)) {
   const l = loadLedger();
-  const events = loadEvents(sinceSec);
+  const events2 = loadEvents(sinceSec);
   return profiles.map((name) => {
-    const mine = events.filter((e) => e.profile === name);
+    const mine = events2.filter((e) => e.profile === name);
     return {
       profile: name,
       total: l.profiles[name]?.total ?? zero(),
@@ -686,7 +686,7 @@ function computeStats(profiles, sinceSec = 0, nowSec = Math.floor(Date.now() / 1
       limits: windowStats(mine.filter((e) => e.type === "limit")),
       thresholds: windowStats(mine.filter((e) => e.type === "threshold")),
       switchesOut: mine.filter((e) => e.type === "switch").length,
-      switchesIn: events.filter((e) => e.type === "switch" && e.to === name).length
+      switchesIn: events2.filter((e) => e.type === "switch" && e.to === name).length
     };
   });
 }
@@ -1953,6 +1953,10 @@ async function rescue(opts) {
   const here = real2(process.cwd());
   if (!opts.all && !opts.session && list.some((s2) => real2(s2.cwd) === here)) list = list.filter((s2) => real2(s2.cwd) === here);
   if (opts.session) list = list.filter((s2) => s2.sessionId === opts.session);
+  if (opts.json) {
+    console.log(JSON.stringify({ schemaVersion: 1, sessions: list.map((s2) => ({ ...s2, account: profileOf(cfg, s2).name })) }, null, 2));
+    return 0;
+  }
   if (!list.length) {
     console.log(opts.session ? `Session ${opts.session} is not stuck at a usage limit.` : "No session is stuck at a usage limit.");
     return 0;
@@ -2006,6 +2010,11 @@ No other account can take it now (${next2.reason})${next2.waitUntil ? `; the fir
     cwd: s.cwd
   });
 }
+
+import { execFileSync as execFileSync2, spawnSync as spawnSync5 } from "node:child_process";
+import fs15 from "node:fs";
+import path13 from "node:path";
+import readline2 from "node:readline";
 
 import fs14 from "node:fs";
 import path12 from "node:path";
@@ -2090,6 +2099,126 @@ function removeAllShims(dir = shimDir()) {
   return removed;
 }
 
+var COMMANDS2 = [
+  "setup",
+  "add",
+  "login",
+  "remove",
+  "list",
+  "status",
+  "usage",
+  "stats",
+  "events",
+  "use",
+  "next",
+  "order",
+  "pause",
+  "resume",
+  "bind",
+  "unbind",
+  "auto",
+  "notify",
+  "rescue",
+  "recover",
+  "doctor",
+  "shims",
+  "update",
+  "uninstall",
+  "completion",
+  "help",
+  "version"
+];
+var PROFILE_ARG = ["-P", "--profile", "use", "login", "remove", "rm", "pause", "resume", "bind", "--to"];
+function profileNames() {
+  try {
+    return loadConfig().profiles.map((p) => p.name);
+  } catch {
+    return [];
+  }
+}
+function completionScript(shell) {
+  const cmds = COMMANDS2.join(" ");
+  if (shell === "fish") {
+    return [
+      `complete -c j2c -f`,
+      `complete -c j2c -n "__fish_use_subcommand" -a "${cmds}"`,
+      `complete -c j2c -n "__fish_seen_subcommand_from ${PROFILE_ARG.filter((a) => !a.startsWith("-")).join(" ")}" -a "(j2c __profiles 2>/dev/null)"`,
+      `complete -c j2c -s P -l profile -x -a "(j2c __profiles 2>/dev/null)"`,
+      ""
+    ].join("\n");
+  }
+  if (shell !== "bash" && shell !== "zsh") throw new UserError("usage: j2c completion bash|zsh|fish");
+  const bash = [
+    `_j2c() {`,
+    `  local cur="\${COMP_WORDS[COMP_CWORD]}" prev="\${COMP_WORDS[COMP_CWORD-1]}"`,
+    `  case "$prev" in`,
+    `    ${PROFILE_ARG.join("|")}) COMPREPLY=($(compgen -W "$(j2c __profiles 2>/dev/null)" -- "$cur")); return ;;`,
+    `    completion) COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")); return ;;`,
+    `  esac`,
+    `  if [ "$COMP_CWORD" -eq 1 ]; then COMPREPLY=($(compgen -W "${cmds}" -- "$cur")); fi`,
+    `}`,
+    `complete -F _j2c j2c`,
+    ""
+  ].join("\n");
+  return shell === "zsh" ? `autoload -U +X bashcompinit && bashcompinit
+${bash}` : bash;
+}
+function installedVersion() {
+  try {
+    return JSON.parse(fs15.readFileSync(path13.join(path13.dirname(fs15.realpathSync(process.argv[1])), "..", "package.json"), "utf8")).version;
+  } catch {
+    return "unknown";
+  }
+}
+function update(checkOnly) {
+  const current = installedVersion();
+  let latest = "";
+  try {
+    latest = execFileSync2("npm", ["view", "julius2claude", "version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3e4 }).trim();
+  } catch {
+    throw new UserError("could not reach the npm registry.");
+  }
+  if (current === latest) {
+    console.log(`julius2claude ${current} is the latest version.`);
+    return 0;
+  }
+  console.log(`julius2claude ${current} \u2192 ${latest} available.`);
+  if (checkOnly) return 0;
+  const real2 = fs15.realpathSync(process.argv[1]);
+  if (!real2.includes(`${path13.sep}node_modules${path13.sep}julius2claude${path13.sep}`)) {
+    console.log(`This copy runs from ${path13.dirname(path13.dirname(real2))} (installed from source). Update it with git pull && npm run build, or install from npm: npm install -g julius2claude`);
+    return 0;
+  }
+  const r = spawnSync5("npm", ["install", "-g", `julius2claude@${latest}`], { stdio: "inherit" });
+  return r.status ?? 1;
+}
+async function confirm2(question) {
+  if (!process.stdin.isTTY) return false;
+  const rl = readline2.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise((r) => rl.question(question, r));
+  rl.close();
+  return /^y/i.test(answer.trim());
+}
+async function uninstall(purge, yes) {
+  if (liveRuns().length) throw new UserError("sessions started with j2c are still running. Close them first.");
+  fs15.rmSync(commandsDir(), { recursive: true, force: true });
+  console.log(`Removed the /j2c:* commands (${commandsDir()}).`);
+  const shims2 = removeAllShims();
+  if (shims2.length) console.log(`Removed ${shims2.length} claude-<profile> command(s) from ${shimDir()}.`);
+  if (purge) {
+    const ok = yes || await confirm2(`Delete ${j2cHome()}, including every extra profile's login? Logins are not revoked. [y/N] `);
+    if (!ok) {
+      console.log(`Kept ${j2cHome()}.`);
+    } else {
+      fs15.rmSync(j2cHome(), { recursive: true, force: true });
+      console.log(`Deleted ${j2cHome()}. To also sign those accounts out, revoke the sessions at claude.ai (Settings).`);
+    }
+  } else console.log(`Kept your profiles and history in ${j2cHome()} (add --purge to delete them).`);
+  console.log(`Your main login in ~/.claude was not touched.
+Finish with: npm uninstall -g julius2claude${process.env.SHELL ? "  (and remove alias claude=j2c from your shell profile if you added it)" : ""}`);
+  return 0;
+}
+
 var VERSION = true ? "0.4.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
@@ -2133,6 +2262,10 @@ Every day:
                                   claude) to the next account, in this terminal
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
+  j2c events [--follow] [--json]  limit, early-switch and switch events as they happen
+  j2c update [--check]            update julius2claude from npm
+  j2c completion bash|zsh|fish    shell completion (eval "$(j2c completion zsh)")
+  j2c uninstall [--purge]         remove the /j2c:* and claude-<profile> commands (and data with --purge)
 
 Docs: https://github.com/gabrielvieiraf/julius2claude`;
 function parse(argv, valueFlags = []) {
@@ -2153,7 +2286,7 @@ function parse(argv, valueFlags = []) {
 }
 var str = (v) => typeof v === "string" ? v : void 0;
 function requireSetup() {
-  if (!fs15.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
+  if (!fs16.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
   return loadConfig();
 }
 async function main(argv) {
@@ -2205,6 +2338,18 @@ async function main(argv) {
       return next(rest);
     case "order":
       return order(rest);
+    case "completion":
+      process.stdout.write(completionScript(rest[0]));
+      return 0;
+    case "__profiles":
+      console.log(profileNames().join("\n"));
+      return 0;
+    case "update":
+      return update(rest.includes("--check"));
+    case "uninstall":
+      return uninstall(rest.includes("--purge"), rest.includes("--yes"));
+    case "events":
+      return events(rest);
     case "notify":
       return notifyCmd(rest);
     case "pause":
@@ -2225,7 +2370,7 @@ async function main(argv) {
       const p = parse(rest, ["session", "to", "model", "note"]);
       const n = p._[0] ? Number(p._[0]) : void 0;
       if (n !== void 0 && (!Number.isInteger(n) || n < 1)) throw new UserError("usage: j2c rescue [n] [--model sonnet] [--to <profile>] [--yes] [--list] [--all]");
-      return rescue({ index: n, session: str(p.flags.session), to: str(p.flags.to), model: str(p.flags.model), note: str(p.flags.note), yes: !!p.flags.yes, list: !!p.flags.list, all: !!p.flags.all });
+      return rescue({ index: n, session: str(p.flags.session), to: str(p.flags.to), model: str(p.flags.model), note: str(p.flags.note), yes: !!p.flags.yes, list: !!p.flags.list, all: !!p.flags.all, json: !!p.flags.json });
     }
     case "doctor":
       return doctor();
@@ -2254,7 +2399,7 @@ async function launch(argv) {
   return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
 function reportShims(r, verbose) {
-  for (const f of r.created) console.log(`  command: ${path13.basename(f).replace(/\.cmd$/, "")}`);
+  for (const f of r.created) console.log(`  command: ${path14.basename(f).replace(/\.cmd$/, "")}`);
   for (const f of r.skipped) if (verbose) console.log(`  ! ${f} exists and is not a julius2claude command; left untouched`);
 }
 function shims(argv) {
@@ -2271,7 +2416,7 @@ function shims(argv) {
   return 0;
 }
 function setup() {
-  const existed = fs15.existsSync(paths.config());
+  const existed = fs16.existsSync(paths.config());
   const cfg = loadConfig();
   const mainP = cfg.profiles.find((p) => p.isMain);
   if (mainP) {
@@ -2284,7 +2429,7 @@ function setup() {
   const v = claudeVersion();
   console.log(existed ? "julius2claude is already set up; refreshed." : "julius2claude is set up.");
   console.log(`  config:   ${paths.config()}`);
-  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path13.dirname(files[0])})`);
+  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path14.dirname(files[0])})`);
   if (mainP?.account?.email) console.log(`  main:     ${mainP.account.email}${mainP.account.org ? ` (${mainP.account.org})` : ""}`);
   if (!v) console.log("  \u26A0 `claude` was not found on PATH. Install Claude Code: https://code.claude.com");
   else if (!versionAtLeast(v, "2.1.152")) console.log(`  \u26A0 Claude Code ${v} is old; run \`claude update\`.`);
@@ -2351,10 +2496,10 @@ function add2(argv) {
   ensureProfileDir(profile);
   reportShims(syncShims(cfgAfter), false);
   if (provider === "apikey") {
-    const file = path13.join(profile.configDir, "settings.json");
-    const s = JSON.parse(fs15.readFileSync(file, "utf8"));
+    const file = path14.join(profile.configDir, "settings.json");
+    const s = JSON.parse(fs16.readFileSync(file, "utf8"));
     s.apiKeyHelper = str(f["api-key-helper"]);
-    fs15.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
+    fs16.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
   }
   console.log(`Added profile "${name}" (${provider}${group ? `, group ${group}` : ""}).`);
   if (PAID.has(provider)) {
@@ -2396,8 +2541,8 @@ function remove(argv) {
   });
   syncShims(cfgAfter);
   if (p.flags.purge) {
-    for (const e of fs15.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs15.unlinkSync(path13.join(prof.configDir, e.name));
-    fs15.rmSync(prof.configDir, { recursive: true, force: true });
+    for (const e of fs16.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs16.unlinkSync(path14.join(prof.configDir, e.name));
+    fs16.rmSync(prof.configDir, { recursive: true, force: true });
     console.log(`Removed "${name}" and its folder. Its login was not revoked; sign out at claude.ai if you want that.`);
   } else console.log(`Removed "${name}". Its folder is kept at ${prof.configDir}.`);
   return 0;
@@ -2522,6 +2667,44 @@ function next(argv) {
   }
   return 0;
 }
+async function events(argv) {
+  requireSetup();
+  const file = path14.join(paths.stateDir(), "events.jsonl");
+  const json = argv.includes("--json");
+  const show = (line) => {
+    if (!line.trim()) return;
+    if (json) return console.log(line);
+    try {
+      const e = JSON.parse(line);
+      const when = new Date(e.at * 1e3).toLocaleString([], { hourCycle: "h23" });
+      const what = e.type === "switch" ? `${e.profile} \u2192 ${e.to} (${e.reason})` : `${e.profile}: ${e.type} ${e.window ?? ""}${e.elapsedSec !== void 0 ? ` after ${fmtDuration(e.elapsedSec)}` : ""}`;
+      console.log(`${when}  ${what}`);
+    } catch {
+    }
+  };
+  let size = 0;
+  try {
+    const text = fs16.readFileSync(file, "utf8");
+    text.split("\n").slice(-50).forEach(show);
+    size = Buffer.byteLength(text);
+  } catch {
+  }
+  if (!argv.includes("--follow")) return 0;
+  fs16.mkdirSync(path14.dirname(file), { recursive: true });
+  if (!fs16.existsSync(file)) fs16.writeFileSync(file, "");
+  await new Promise(() => {
+    fs16.watchFile(file, { interval: 500 }, (cur) => {
+      if (cur.size <= size) return;
+      const fd = fs16.openSync(file, "r");
+      const buf = Buffer.alloc(cur.size - size);
+      fs16.readSync(fd, buf, 0, buf.length, size);
+      fs16.closeSync(fd);
+      size = cur.size;
+      buf.toString("utf8").split("\n").forEach(show);
+    });
+  });
+  return 0;
+}
 async function notifyCmd(argv) {
   requireSetup();
   const p = parse(argv, ["webhook"]);
@@ -2567,7 +2750,7 @@ function bind(argv) {
   const [name, dirArg] = p._;
   if (!name) throw new UserError("usage: j2c bind <profile> [dir] [--strict]");
   getProfile(cfg, name);
-  const dir = fs15.realpathSync(path13.resolve(dirArg ?? "."));
+  const dir = fs16.realpathSync(path14.resolve(dirArg ?? "."));
   mutateConfig((c) => {
     c.bindings = c.bindings.filter((b) => b.dir !== dir);
     c.bindings.push({ dir, profile: name, ...p.flags.strict ? { strict: true } : {} });
@@ -2577,7 +2760,7 @@ function bind(argv) {
 }
 function unbind(argv) {
   requireSetup();
-  const dir = fs15.realpathSync(path13.resolve(argv[0] ?? "."));
+  const dir = fs16.realpathSync(path14.resolve(argv[0] ?? "."));
   mutateConfig((c) => void (c.bindings = c.bindings.filter((b) => b.dir !== dir)));
   console.log(`${dir} is no longer bound.`);
   return 0;
@@ -2611,7 +2794,11 @@ function auto(argv) {
 }
 async function recover(argv) {
   const cfg = requireSetup();
-  const list = interruptedSessions().filter((s2) => fs15.existsSync(s2.cwd));
+  const list = interruptedSessions().filter((s2) => fs16.existsSync(s2.cwd));
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions: list }, null, 2));
+    return 0;
+  }
   if (!list.length) {
     console.log("No interrupted sessions. \u{1F389}");
     return 0;
@@ -2643,6 +2830,7 @@ var WINDOW_LABEL = {
   seven_day_sonnet: "weekly Sonnet limit"
 };
 function usageView(argv) {
+  if (argv.includes("--json")) return status(["--json"]);
   const cfg = requireSetup();
   const usage = loadUsage();
   const color = !argv.includes("--plain") && !!process.stdout.isTTY && !process.env.NO_COLOR;
@@ -2739,10 +2927,10 @@ function doctor() {
   if (leaks.length) warn(`${leaks.join(", ")} set in your shell: plain \`claude\` would use it instead of your login. j2c removes it for its sessions (use --keep-env to keep it).`);
   else ok("no auth overrides in your shell");
   if (process.env.CLAUDE_CONFIG_DIR) warn(`CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR} is set in your shell; j2c ignores it and uses each profile's own folder.`);
-  const dotenv = path13.join(process.cwd(), ".env");
-  if (fs15.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs15.readFileSync(dotenv, "utf8")))
+  const dotenv = path14.join(process.cwd(), ".env");
+  if (fs16.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs16.readFileSync(dotenv, "utf8")))
     warn(".env in this folder defines an Anthropic key; some tools load it automatically and bill it instead of your plan.");
-  if (fs15.existsSync(path13.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
+  if (fs16.existsSync(path14.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
   else bad("/j2c:* commands missing (run `j2c setup`)");
   console.log("Profiles");
   for (const p of ordered(cfg)) {
@@ -2753,11 +2941,11 @@ function doctor() {
     if (st === "ok" && cred?.refreshTokenExpiresAt && cred.refreshTokenExpiresAt - Date.now() < 3 * 864e5)
       warn(`${p.name}: login expires ${new Date(cred.refreshTokenExpiresAt).toLocaleDateString()}; start one session on it (\`j2c -P ${p.name}\`) to renew it`);
     if (!p.isMain) {
-      if (!fs15.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
+      if (!fs16.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
       else {
-        const link = path13.join(p.configDir, "projects");
+        const link = path14.join(p.configDir, "projects");
         try {
-          if (!fs15.lstatSync(link).isSymbolicLink() || fs15.realpathSync(link) !== fs15.realpathSync(path13.join(groupStore(p.group), "projects")))
+          if (!fs16.lstatSync(link).isSymbolicLink() || fs16.realpathSync(link) !== fs16.realpathSync(path14.join(groupStore(p.group), "projects")))
             issues.push("history folder not shared (will be repaired on next launch)");
         } catch {
           issues.push("history folder missing (will be repaired on next launch)");
@@ -2778,14 +2966,14 @@ function doctor() {
   if (process.env.WSL_DISTRO_NAME && paths.config().startsWith("/mnt/"))
     bad(`julius2claude data is on the Windows drive (${paths.config()}); links there break. Keep J2C_HOME inside the Linux home.`);
   const stale = defaultClaudeJson();
-  if (!fs15.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
+  if (!fs16.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
   console.log(problems ? `
 ${problems} problem(s) found.` : "\nAll good.");
   return problems ? 1 : 0;
 }
 var isEntry = (() => {
   try {
-    return fs15.realpathSync(process.argv[1] ?? "") === fs15.realpathSync(new URL(import.meta.url).pathname);
+    return fs16.realpathSync(process.argv[1] ?? "") === fs16.realpathSync(new URL(import.meta.url).pathname);
   } catch {
     return false;
   }

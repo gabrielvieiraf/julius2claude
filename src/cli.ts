@@ -16,6 +16,7 @@ import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
 import { rescue } from "./rescue.js";
 import { notify } from "./notify.js";
+import { completionScript, profileNames, uninstall, update } from "./maintenance.js";
 import { removeAllShims, shimDir, syncShims } from "./shims.js";
 import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
@@ -67,6 +68,10 @@ Every day:
                                   claude) to the next account, in this terminal
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
+  j2c events [--follow] [--json]  limit, early-switch and switch events as they happen
+  j2c update [--check]            update julius2claude from npm
+  j2c completion bash|zsh|fish    shell completion (eval "$(j2c completion zsh)")
+  j2c uninstall [--purge]         remove the /j2c:* and claude-<profile> commands (and data with --purge)
 
 Docs: https://github.com/gabrielvieiraf/julius2claude`;
 
@@ -148,6 +153,18 @@ export async function main(argv: string[]): Promise<number> {
       return next(rest);
     case "order":
       return order(rest);
+    case "completion":
+      process.stdout.write(completionScript(rest[0]));
+      return 0;
+    case "__profiles":
+      console.log(profileNames().join("\n"));
+      return 0;
+    case "update":
+      return update(rest.includes("--check"));
+    case "uninstall":
+      return uninstall(rest.includes("--purge"), rest.includes("--yes"));
+    case "events":
+      return events(rest);
     case "notify":
       return notifyCmd(rest);
     case "pause":
@@ -168,7 +185,7 @@ export async function main(argv: string[]): Promise<number> {
       const p = parse(rest, ["session", "to", "model", "note"]);
       const n = p._[0] ? Number(p._[0]) : undefined;
       if (n !== undefined && (!Number.isInteger(n) || n < 1)) throw new UserError("usage: j2c rescue [n] [--model sonnet] [--to <profile>] [--yes] [--list] [--all]");
-      return rescue({ index: n, session: str(p.flags.session), to: str(p.flags.to), model: str(p.flags.model), note: str(p.flags.note), yes: !!p.flags.yes, list: !!p.flags.list, all: !!p.flags.all });
+      return rescue({ index: n, session: str(p.flags.session), to: str(p.flags.to), model: str(p.flags.model), note: str(p.flags.note), yes: !!p.flags.yes, list: !!p.flags.list, all: !!p.flags.all, json: !!p.flags.json });
     }
     case "doctor":
       return doctor();
@@ -475,6 +492,43 @@ function next(argv: string[]): number {
   return 0;
 }
 
+async function events(argv: string[]): Promise<number> {
+  requireSetup();
+  const file = path.join(paths.stateDir(), "events.jsonl");
+  const json = argv.includes("--json");
+  const show = (line: string) => {
+    if (!line.trim()) return;
+    if (json) return console.log(line);
+    try {
+      const e = JSON.parse(line);
+      const when = new Date(e.at * 1000).toLocaleString([], { hourCycle: "h23" });
+      const what = e.type === "switch" ? `${e.profile} → ${e.to} (${e.reason})` : `${e.profile}: ${e.type} ${e.window ?? ""}${e.elapsedSec !== undefined ? ` after ${fmtDuration(e.elapsedSec)}` : ""}`;
+      console.log(`${when}  ${what}`);
+    } catch {}
+  };
+  let size = 0;
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    text.split("\n").slice(-50).forEach(show);
+    size = Buffer.byteLength(text);
+  } catch {}
+  if (!argv.includes("--follow")) return 0;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (!fs.existsSync(file)) fs.writeFileSync(file, "");
+  await new Promise<void>(() => {
+    fs.watchFile(file, { interval: 500 }, (cur) => {
+      if (cur.size <= size) return;
+      const fd = fs.openSync(file, "r");
+      const buf = Buffer.alloc(cur.size - size);
+      fs.readSync(fd, buf, 0, buf.length, size);
+      fs.closeSync(fd);
+      size = cur.size;
+      buf.toString("utf8").split("\n").forEach(show);
+    });
+  });
+  return 0;
+}
+
 async function notifyCmd(argv: string[]): Promise<number> {
   requireSetup();
   const p = parse(argv, ["webhook"]);
@@ -571,6 +625,10 @@ function auto(argv: string[]): number {
 async function recover(argv: string[]): Promise<number> {
   const cfg = requireSetup();
   const list = interruptedSessions().filter((s) => fs.existsSync(s.cwd));
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sessions: list }, null, 2));
+    return 0;
+  }
   if (!list.length) {
     console.log("No interrupted sessions. 🎉");
     return 0;
@@ -604,6 +662,7 @@ const WINDOW_LABEL: Record<string, string> = {
 };
 
 function usageView(argv: string[]): number {
+  if (argv.includes("--json")) return status(["--json"]);
   const cfg = requireSetup();
   const usage = loadUsage();
   const color = !argv.includes("--plain") && !!process.stdout.isTTY && !process.env.NO_COLOR;

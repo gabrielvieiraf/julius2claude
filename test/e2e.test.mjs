@@ -510,3 +510,34 @@ test("notifications: a switch notifies only when notifications are on", async ()
     sb.cleanup();
   }
 });
+
+test("maintenance: completion lists commands and profiles, events and JSON are machine-readable, uninstall cleans up", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    assert.match(sb.j2c(["completion", "bash"]).out, /complete -F _j2c j2c/);
+    assert.match(sb.j2c(["completion", "zsh"]).out, /bashcompinit/);
+    assert.match(sb.j2c(["completion", "fish"]).out, /complete -c j2c/);
+    assert.deepEqual(sb.j2c(["__profiles"]).out.trim().split("\n"), ["main", "work"]);
+    sb.j2c(["auto", "on"]);
+    await sb.j2cAsync([], { FAKE_PLAN: JSON.stringify({ main: ["turn:10", "limit", "wait"], work: ["exit"] }) });
+    const ev = sb.j2c(["events", "--json"]).out.trim().split("\n").map((l) => JSON.parse(l));
+    assert.ok(ev.some((e) => e.type === "limit" && e.profile === "main"));
+    assert.ok(ev.some((e) => e.type === "switch" && e.to === "work"));
+    assert.match(sb.j2c(["events"]).out, /main → work/);
+    assert.equal(JSON.parse(sb.j2c(["usage", "--json"]).out).schemaVersion, 1);
+    assert.equal(JSON.parse(sb.j2c(["rescue", "--json"]).out).schemaVersion, 1);
+    assert.equal(JSON.parse(sb.j2c(["recover", "--json"]).out).schemaVersion, 1);
+    assert.ok(fs.existsSync(path.join(sb.env.J2C_CLAUDE_DIR, "commands", "j2c", "use.md")));
+    const u = sb.j2c(["uninstall"]);
+    assert.equal(u.code, 0, u.err);
+    assert.ok(!fs.existsSync(path.join(sb.env.J2C_CLAUDE_DIR, "commands", "j2c")));
+    assert.ok(!fs.existsSync(path.join(sb.env.J2C_SHIM_DIR, "claude-work")));
+    assert.ok(fs.existsSync(sb.env.J2C_HOME), "data is kept without --purge");
+    sb.j2c(["uninstall", "--purge", "--yes"]);
+    assert.ok(!fs.existsSync(sb.env.J2C_HOME));
+    assert.ok(fs.existsSync(path.join(sb.env.J2C_CLAUDE_DIR, ".credentials.json")), "the main login is never touched");
+  } finally {
+    sb.cleanup();
+  }
+});
