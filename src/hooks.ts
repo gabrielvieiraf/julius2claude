@@ -4,6 +4,7 @@ import { loadConfig, getProfile } from "./config.js";
 import { shouldLeave } from "./router.js";
 import { loadRun, mutateRun, recordSession, type Run } from "./runs.js";
 import { log } from "./store.js";
+import { ingestTranscript, recordEvent } from "./stats.js";
 import { findQuotaRefusal, loadUsage, mutateUsage, nowS, type QuotaRefusal } from "./usage.js";
 
 const HARD_ERRORS: Record<string, string> = {
@@ -62,6 +63,7 @@ export async function runHook(event: string, runId: string | undefined, input?: 
       if (sid) record(run, sid, "busy");
       return;
     case "stop":
+      ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
       mutateRun(runId, (r) => {
         r.busy = false;
         r.lastStopAt = Date.now();
@@ -69,6 +71,7 @@ export async function runHook(event: string, runId: string | undefined, input?: 
       if (sid) record(run, sid, "idle");
       return;
     case "session-end":
+      ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
       if (sid) record(run, sid, "ended");
       return;
     case "stop-failure":
@@ -91,6 +94,7 @@ function record(run: Run, sessionId: string, state: "busy" | "idle" | "ended", t
 function onStopFailure(run: Run, data: any): void {
   const error: string = data.error ?? data.error_type ?? "unknown";
   const now = Date.now();
+  ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
   mutateRun(run.id, (r) => {
     r.busy = false;
     r.lastStopAt = now;
@@ -110,6 +114,7 @@ function onStopFailure(run: Run, data: any): void {
     const refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
     if (refusal?.resetsAt) {
       hard = true;
+      recordEvent({ type: "limit", profile: run.profile, window: refusal.rateLimitType, resetsAt: refusal.resetsAt });
       const label = limitLabel(refusal.rateLimitType);
       mutateUsage((u) => {
         const cur = (u[run.profile] ??= {});

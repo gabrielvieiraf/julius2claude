@@ -9,6 +9,7 @@ import { pickNext, pickStart, allowedIn } from "./router.js";
 import { type Run, BOUNDARY_MS, liveRuns, loadRun, mutateRun, removeRun, saveRun } from "./runs.js";
 import { log, readJson, writeJson } from "./store.js";
 import { loadUsage, mutateUsage, nowS } from "./usage.js";
+import { recordEvent } from "./stats.js";
 import { claudeBin, claudeVersion, descendants, restoreTty, saveTty, signal, versionAtLeast } from "./proc.js";
 import { alive } from "./runs.js";
 
@@ -213,6 +214,7 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
       profile = target;
       mutateUsage((u) => void ((u[profile.name] ??= {}).enteredAt = Date.now()));
       say(`${from} → ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session…" : ""}`);
+      recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
       log(`switch run=${run.id} ${from} -> ${profile.name} reason=${pending.reason} hard=${pending.hard}`);
 
       const transcriptOk = !!cur.transcriptPath && fs.existsSync(cur.transcriptPath);

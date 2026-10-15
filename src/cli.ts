@@ -14,6 +14,7 @@ import { bindingFor, pickNext, usable } from "./router.js";
 import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs.js";
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
+import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
 import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
 import { livePct, loadUsage, mutateUsage, activeBlocks } from "./usage.js";
 
@@ -53,6 +54,7 @@ Every day:
   j2c bind <name> [dir] [--strict]  always use <name> in dir (strict: never any other)
   j2c unbind [dir]
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
+  j2c stats [--days N] [--json]   tokens per account and how long each took to reach its limits
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
 
@@ -146,6 +148,8 @@ export async function main(argv: string[]): Promise<number> {
       return recover(rest);
     case "doctor":
       return doctor();
+    case "stats":
+      return stats(rest);
     case "run":
       return launch(rest);
     default:
@@ -506,6 +510,44 @@ async function recover(argv: string[]): Promise<number> {
     args: ["--resume", s.sessionId, "[julius2claude] This session was interrupted (the machine, WSL or terminal died) in the middle of a reply. Check what the last tool call actually did, redo anything incomplete, then continue the task."],
     cwd: s.cwd,
   });
+}
+
+const WINDOW_LABEL: Record<string, string> = {
+  five_hour: "5-hour limit",
+  seven_day: "weekly limit",
+  seven_day_opus: "weekly Opus limit",
+  seven_day_sonnet: "weekly Sonnet limit",
+};
+
+function stats(argv: string[]): number {
+  const cfg = requireSetup();
+  const p = parse(argv, ["days"]);
+  const days = str(p.flags.days) ? Number(str(p.flags.days)) : undefined;
+  if (days !== undefined && (!Number.isFinite(days) || days <= 0)) throw new UserError("--days must be a positive number");
+  const since = days ? Math.floor(Date.now() / 1000) - days * 86400 : 0;
+  const rows = computeStats(ordered(cfg).map((x) => x.name), since);
+  if (p.flags.json) {
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sinceEpochSec: since || null, profiles: rows }, null, 2));
+    return 0;
+  }
+  const describe = (w: string, s: WindowStats, verb: string) =>
+    `${WINDOW_LABEL[w] ?? w}: ${verb} ${s.count} time${s.count === 1 ? "" : "s"}` +
+    (s.avgElapsedSec !== undefined ? `, after ${fmtDuration(s.avgElapsedSec)} on average` : "") +
+    (s.avgTokens !== undefined ? `, ~${fmtTokens(s.avgTokens)} tokens per window` : "");
+  console.log(days ? `Last ${days} day(s). Tokens are counted from sessions started with j2c.\n` : "Tokens are counted from sessions started with j2c.\n");
+  for (const r of rows) {
+    const prof = getProfile(cfg, r.profile);
+    console.log(`${r.profile}${prof.account?.email ? ` (${prof.account.email})` : ` (${prof.provider})`}`);
+    const t = r.total;
+    console.log(`  tokens   last 5h ${fmtTokens(sum(r.last5h))} · last 7 days ${fmtTokens(sum(r.last7d))} · total ${fmtTokens(sum(t))}`);
+    if (sum(t)) console.log(`           input ${fmtTokens(t.input)} · output ${fmtTokens(t.output)} · cache read ${fmtTokens(t.cacheRead)} · cache write ${fmtTokens(t.cacheWrite)}`);
+    for (const [w, s] of Object.entries(r.limits)) console.log(`  ${describe(w, s, "reached")}`);
+    for (const [w, s] of Object.entries(r.thresholds)) console.log(`  ${describe(w, s, "switched early")}`);
+    if (!Object.keys(r.limits).length && !Object.keys(r.thresholds).length) console.log("  no limits reached yet");
+    if (r.switchesOut || r.switchesIn) console.log(`  switches  ${r.switchesOut} away · ${r.switchesIn} onto this account`);
+    console.log("");
+  }
+  return 0;
 }
 
 function doctor(): number {

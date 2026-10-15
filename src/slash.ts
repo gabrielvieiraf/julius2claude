@@ -18,6 +18,12 @@ Reply with one short line confirming what julius2claude said above. Do not do an
 
 Reply with one short line confirming what julius2claude said above. Do not do anything else.`,
   },
+  stats: {
+    description: "julius2claude: tokens per account and how long each took to reach its limits",
+    body: `!\`${J2C} stats 2>&1\`
+
+Show the report above to the user as-is. Do not do anything else.`,
+  },
   status: {
     description: "julius2claude: accounts, limits and which one this session is on",
     body: `!\`${J2C} status 2>&1\`

@@ -4,6 +4,7 @@ import { pickNext, shouldLeave, usable } from "./router.js";
 import { loadRun, mutateRun } from "./runs.js";
 import { livePct, loadUsage, mutateUsage, recordStatusline } from "./usage.js";
 import { readStdin } from "./hooks.js";
+import { recordEvent } from "./stats.js";
 import { BOUNDARY_MS } from "./runs.js";
 
 export async function runStatusline(runId: string | undefined, wrapped: string | undefined): Promise<string> {
@@ -27,6 +28,9 @@ export async function runStatusline(runId: string | undefined, wrapped: string |
     if (run && cfg.autoSwitch.enabled && !run.pendingSwitch && shouldLeave(cfg, usage, profile, false)) {
       const next = pickNext(cfg, usage, profile, run.cwd);
       if (next.profile) {
+        const weekly = (livePct(u?.sevenDay) ?? 0) >= cfg.autoSwitch.weeklyPct;
+        const win = weekly ? u?.sevenDay : u?.fiveHour;
+        recordEvent({ type: "threshold", profile: profileName, window: weekly ? "seven_day" : "five_hour", resetsAt: win?.resetsAt });
         const justStopped = !run.busy && run.lastStopAt && Date.now() - run.lastStopAt < BOUNDARY_MS;
         mutateRun(run.id, (r) => {
           r.pendingSwitch ??= {

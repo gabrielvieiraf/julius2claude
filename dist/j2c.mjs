@@ -2,8 +2,8 @@
 
 // src/cli.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
-import fs10 from "node:fs";
-import path9 from "node:path";
+import fs11 from "node:fs";
+import path10 from "node:path";
 
 // src/paths.ts
 import os from "node:os";
@@ -142,8 +142,8 @@ var UserError = class extends Error {
 var NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 // src/hooks.ts
-import fs5 from "node:fs";
-import path5 from "node:path";
+import fs6 from "node:fs";
+import path6 from "node:path";
 
 // src/router.ts
 import path4 from "node:path";
@@ -523,6 +523,192 @@ function interruptedSessions() {
   return names.map((n) => readJson(`${paths.sessionsDir()}/${n}`, null)).filter((s) => !!s && s.state === "busy" && !alive(s.supervisorPid)).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+// src/stats.ts
+import fs5 from "node:fs";
+import path5 from "node:path";
+var WINDOW_SEC = {
+  five_hour: 5 * 3600,
+  seven_day: 7 * 86400,
+  seven_day_opus: 7 * 86400,
+  seven_day_sonnet: 7 * 86400,
+  seven_day_overage_included: 7 * 86400
+};
+var HOUR = 3600;
+var KEEP_HOURS_SEC = 35 * 86400;
+var KEEP_FILES_MS = 30 * 864e5;
+var ledgerFile = () => path5.join(paths.stateDir(), "tokens.json");
+var eventsFile = () => path5.join(paths.stateDir(), "events.jsonl");
+var zero = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+var sum = (t) => t.input + t.output + t.cacheRead + t.cacheWrite;
+function add(a, u) {
+  a.input += u.input_tokens ?? 0;
+  a.output += u.output_tokens ?? 0;
+  a.cacheRead += u.cache_read_input_tokens ?? 0;
+  a.cacheWrite += u.cache_creation_input_tokens ?? 0;
+}
+function emptyLedger() {
+  return { version: 1, profiles: {}, files: {} };
+}
+function loadLedger() {
+  return readJson(ledgerFile(), emptyLedger());
+}
+function readFrom(file, offset) {
+  let fd;
+  try {
+    fd = fs5.openSync(file, "r");
+    const size = fs5.fstatSync(fd).size;
+    if (size < offset) offset = 0;
+    if (size === offset) return { text: "", end: offset };
+    const buf = Buffer.alloc(size - offset);
+    fs5.readSync(fd, buf, 0, buf.length, offset);
+    const lastNl = buf.lastIndexOf(10);
+    if (lastNl === -1) return { text: "", end: offset };
+    return { text: buf.subarray(0, lastNl + 1).toString("utf8"), end: offset + lastNl + 1 };
+  } catch {
+    return void 0;
+  } finally {
+    if (fd !== void 0) fs5.closeSync(fd);
+  }
+}
+function real(file) {
+  try {
+    return fs5.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+function transcriptFiles(transcript) {
+  const files = [real(transcript)];
+  const sub = path5.join(transcript.replace(/\.jsonl$/, ""), "subagents");
+  try {
+    for (const f of fs5.readdirSync(sub)) if (f.endsWith(".jsonl")) files.push(real(path5.join(sub, f)));
+  } catch {
+  }
+  return files;
+}
+function ingestTranscript(transcript, profile, sinceMs = 0) {
+  if (!transcript) return;
+  updateJson(ledgerFile(), emptyLedger(), (l) => {
+    const now = Date.now();
+    const p = l.profiles[profile] ??= { total: zero(), hours: {} };
+    for (const file of transcriptFiles(transcript)) {
+      const isNew = !l.files[file];
+      const cur = l.files[file] ?? { offset: 0, touchedAt: now };
+      const chunk = readFrom(file, cur.offset);
+      if (!chunk) continue;
+      let lastId = cur.lastId;
+      for (const line of chunk.text.split("\n")) {
+        if (!line.includes('"usage"')) continue;
+        let o;
+        try {
+          o = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        const msg = o.message;
+        if (o.type !== "assistant" || !msg?.usage || o.isApiErrorMessage) continue;
+        const at = Date.parse(o.timestamp ?? "") || now;
+        if (isNew && at < sinceMs) continue;
+        const id = msg.id ?? o.requestId;
+        if (id && id === lastId) continue;
+        lastId = id;
+        add(p.total, msg.usage);
+        const ts = Math.floor(at / 1e3);
+        const hour = String(ts - ts % HOUR);
+        add(p.hours[hour] ??= zero(), msg.usage);
+      }
+      l.files[file] = { offset: chunk.end, lastId, touchedAt: now };
+    }
+    const cutoff = Math.floor(now / 1e3) - KEEP_HOURS_SEC;
+    for (const prof of Object.values(l.profiles))
+      for (const h of Object.keys(prof.hours)) if (Number(h) < cutoff) delete prof.hours[h];
+    for (const [f, c] of Object.entries(l.files)) if (now - c.touchedAt > KEEP_FILES_MS) delete l.files[f];
+  });
+}
+function tokensBetween(l, profile, fromSec, toSec) {
+  const t = zero();
+  const hours = l.profiles[profile]?.hours ?? {};
+  for (const [h, v] of Object.entries(hours)) {
+    const start = Number(h);
+    if (start + HOUR <= fromSec || start > toSec) continue;
+    t.input += v.input;
+    t.output += v.output;
+    t.cacheRead += v.cacheRead;
+    t.cacheWrite += v.cacheWrite;
+  }
+  return t;
+}
+function recordEvent(e) {
+  const ev = { at: Math.floor(Date.now() / 1e3), ...e };
+  if ((ev.type === "limit" || ev.type === "threshold") && ev.window && ev.resetsAt && WINDOW_SEC[ev.window]) {
+    const start = ev.resetsAt - WINDOW_SEC[ev.window];
+    ev.elapsedSec = Math.max(0, ev.at - start);
+    ev.tokensInWindow = sum(tokensBetween(loadLedger(), ev.profile, start, ev.at));
+  }
+  fs5.mkdirSync(path5.dirname(eventsFile()), { recursive: true });
+  fs5.appendFileSync(eventsFile(), JSON.stringify(ev) + "\n");
+}
+function loadEvents(sinceSec = 0) {
+  let text = "";
+  try {
+    text = fs5.readFileSync(eventsFile(), "utf8");
+  } catch {
+  }
+  return text.split("\n").filter(Boolean).map((l) => {
+    try {
+      return JSON.parse(l);
+    } catch {
+      return void 0;
+    }
+  }).filter((e) => !!e && e.at >= sinceSec);
+}
+function windowStats(events) {
+  const by = {};
+  for (const e of events) if (e.window) (by[e.window] ??= []).push(e);
+  const out = {};
+  for (const [w, list] of Object.entries(by)) {
+    const el = list.map((e) => e.elapsedSec).filter((x) => typeof x === "number");
+    const tk = list.map((e) => e.tokensInWindow).filter((x) => typeof x === "number" && x > 0);
+    out[w] = {
+      count: list.length,
+      ...el.length ? { avgElapsedSec: Math.round(el.reduce((a, b) => a + b, 0) / el.length) } : {},
+      ...tk.length ? { avgTokens: Math.round(tk.reduce((a, b) => a + b, 0) / tk.length) } : {}
+    };
+  }
+  return out;
+}
+function computeStats(profiles, sinceSec = 0, nowSec = Math.floor(Date.now() / 1e3)) {
+  const l = loadLedger();
+  const events = loadEvents(sinceSec);
+  return profiles.map((name) => {
+    const mine = events.filter((e) => e.profile === name);
+    return {
+      profile: name,
+      total: l.profiles[name]?.total ?? zero(),
+      last5h: tokensBetween(l, name, nowSec - 5 * HOUR, nowSec),
+      last7d: tokensBetween(l, name, nowSec - 7 * 86400, nowSec),
+      limits: windowStats(mine.filter((e) => e.type === "limit")),
+      thresholds: windowStats(mine.filter((e) => e.type === "threshold")),
+      switchesOut: mine.filter((e) => e.type === "switch").length,
+      switchesIn: events.filter((e) => e.type === "switch" && e.to === name).length
+    };
+  });
+}
+function fmtTokens(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(n);
+}
+function fmtDuration(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor(sec % 86400 / 3600);
+  const m = Math.floor(sec % 3600 / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${m}m`;
+}
+
 // src/hooks.ts
 var HARD_ERRORS = {
   authentication_failed: "login failed (run `j2c login <profile>`)",
@@ -576,6 +762,7 @@ async function runHook(event, runId, input) {
       if (sid) record(run, sid, "busy");
       return;
     case "stop":
+      ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
       mutateRun(runId, (r) => {
         r.busy = false;
         r.lastStopAt = Date.now();
@@ -583,6 +770,7 @@ async function runHook(event, runId, input) {
       if (sid) record(run, sid, "idle");
       return;
     case "session-end":
+      ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
       if (sid) record(run, sid, "ended");
       return;
     case "stop-failure":
@@ -603,6 +791,7 @@ function record(run, sessionId, state, transcriptPath) {
 function onStopFailure(run, data) {
   const error = data.error ?? data.error_type ?? "unknown";
   const now = Date.now();
+  ingestTranscript(data.transcript_path ?? run.transcriptPath, run.profile, run.startedAt);
   mutateRun(run.id, (r) => {
     r.busy = false;
     r.lastStopAt = now;
@@ -621,6 +810,7 @@ function onStopFailure(run, data) {
     const refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
     if (refusal?.resetsAt) {
       hard = true;
+      recordEvent({ type: "limit", profile: run.profile, window: refusal.rateLimitType, resetsAt: refusal.resetsAt });
       const label = limitLabel(refusal.rateLimitType);
       mutateUsage((u) => {
         const cur = u[run.profile] ??= {};
@@ -657,12 +847,12 @@ function findRefusal(run, transcript) {
   const since = run.childStartedAt ?? run.startedAt;
   const main2 = findQuotaRefusal(transcript, since);
   if (main2) return main2;
-  const subDir = path5.join(transcript.replace(/\.jsonl$/, ""), "subagents");
+  const subDir = path6.join(transcript.replace(/\.jsonl$/, ""), "subagents");
   let best;
   try {
-    for (const f of fs5.readdirSync(subDir)) {
+    for (const f of fs6.readdirSync(subDir)) {
       if (!f.endsWith(".jsonl")) continue;
-      const r = findQuotaRefusal(path5.join(subDir, f), since);
+      const r = findQuotaRefusal(path6.join(subDir, f), since);
       if (r && (!best || r.at > best.at)) best = r;
     }
   } catch {
@@ -686,12 +876,12 @@ function limitLabel(type) {
 
 // src/login.ts
 import { spawn as spawn2 } from "node:child_process";
-import fs8 from "node:fs";
-import path7 from "node:path";
+import fs9 from "node:fs";
+import path8 from "node:path";
 
 // src/proc.ts
 import { execFileSync, spawnSync } from "node:child_process";
-import fs6 from "node:fs";
+import fs7 from "node:fs";
 function descendants(root) {
   if (process.platform === "win32") return [];
   let out = "";
@@ -734,7 +924,7 @@ function restoreTty(saved) {
   if (!process.stdout.isTTY) return;
   if (saved) spawnSync("stty", [saved], { stdio: ["inherit", "ignore", "ignore"] });
   try {
-    fs6.writeSync(1, "\x1B[=0u\x1B[<u\x1B[?1000l\x1B[?1002l\x1B[?1003l\x1B[?1006l\x1B[?2004l\x1B[?1049l\x1B[?25h");
+    fs7.writeSync(1, "\x1B[=0u\x1B[<u\x1B[?1000l\x1B[?1002l\x1B[?1003l\x1B[?1006l\x1B[?2004l\x1B[?1049l\x1B[?25h");
   } catch {
   }
 }
@@ -762,8 +952,8 @@ function versionAtLeast(v, min) {
 // src/supervisor.ts
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import fs7 from "node:fs";
-import path6 from "node:path";
+import fs8 from "node:fs";
+import path7 from "node:path";
 var AUTH_ENV_KEYS = [
   "CLAUDE_CODE_USE_BEDROCK",
   "CLAUDE_CODE_USE_VERTEX",
@@ -795,7 +985,7 @@ function buildEnv(p, run, keepEnv = false, base = process.env) {
   env.J2C_RUN_ID = run.id;
   env.J2C_PROFILE = p.name;
   env.J2C_NODE = process.execPath;
-  env.J2C_BIN = path6.resolve(process.argv[1] ?? "j2c");
+  env.J2C_BIN = path7.resolve(process.argv[1] ?? "j2c");
   return env;
 }
 function carryFlags(args) {
@@ -813,9 +1003,9 @@ function carryFlags(args) {
 }
 function userStatusline(p, cwd) {
   const files = [
-    path6.join(cwd, ".claude", "settings.local.json"),
-    path6.join(cwd, ".claude", "settings.json"),
-    path6.join(p.isMain ? defaultClaudeDir() : p.configDir, "settings.json")
+    path7.join(cwd, ".claude", "settings.local.json"),
+    path7.join(cwd, ".claude", "settings.json"),
+    path7.join(p.isMain ? defaultClaudeDir() : p.configDir, "settings.json")
   ];
   for (const f of files) {
     const s = readJson(f, null)?.statusLine;
@@ -824,7 +1014,7 @@ function userStatusline(p, cwd) {
   return void 0;
 }
 function writeRunSettings(cfg, run, p, extra) {
-  const me = `"${process.execPath}" "${path6.resolve(process.argv[1] ?? "j2c")}"`;
+  const me = `"${process.execPath}" "${path7.resolve(process.argv[1] ?? "j2c")}"`;
   const hook = (ev) => [{ hooks: [{ type: "command", command: `${me} hook ${ev} --run ${run.id}`, timeout: 15 }] }];
   const wrapped = userStatusline(p, run.cwd);
   const settings = {
@@ -850,7 +1040,7 @@ function writeRunSettings(cfg, run, p, extra) {
     const theirs = v.trim().startsWith("{") ? JSON.parse(v) : readJson(v, {});
     for (const [k, val] of Object.entries(theirs)) if (!(k in settings)) settings[k] = val;
   }
-  const file = path6.join(paths.runsDir(), `${run.id}.settings.json`);
+  const file = path7.join(paths.runsDir(), `${run.id}.settings.json`);
   writeJson(file, settings);
   return file;
 }
@@ -870,7 +1060,7 @@ var say = (msg) => process.stderr.write(`\x1B[33m[julius2claude]\x1B[0m ${msg}
 `);
 async function supervise(opts) {
   const cfg = loadConfig();
-  const cwd = path6.resolve(opts.cwd);
+  const cwd = path7.resolve(opts.cwd);
   const start = pickStart(cfg, loadUsage(), cwd, opts.profile);
   if (!start.profile) throw new UserError(start.reason ?? "no usable profile");
   let profile = start.profile;
@@ -955,8 +1145,9 @@ async function supervise(opts) {
       profile = target;
       mutateUsage((u) => void ((u[profile.name] ??= {}).enteredAt = Date.now()));
       say(`${from} \u2192 ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session\u2026" : ""}`);
+      recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
       log(`switch run=${run.id} ${from} -> ${profile.name} reason=${pending.reason} hard=${pending.hard}`);
-      const transcriptOk = !!cur.transcriptPath && fs7.existsSync(cur.transcriptPath);
+      const transcriptOk = !!cur.transcriptPath && fs8.existsSync(cur.transcriptPath);
       if (sessionId && transcriptOk) {
         args = [...carried, "--resume", sessionId];
         if (pending.hard) args.push(continuePrompt(from, profile.name, pending.reason, killedTasks));
@@ -967,7 +1158,7 @@ async function supervise(opts) {
   } finally {
     process.off("SIGINT", onSigint);
     removeRun(run.id);
-    fs7.rmSync(settingsFile, { force: true });
+    fs8.rmSync(settingsFile, { force: true });
   }
 }
 function watch(child, runId) {
@@ -1027,7 +1218,7 @@ function describe(pids) {
   const out = [];
   for (const p of pids.slice(0, 10)) {
     try {
-      const cmd = fs7.readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").trim();
+      const cmd = fs8.readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").trim();
       if (cmd) out.push(cmd.slice(0, 120));
     } catch {
     }
@@ -1065,8 +1256,8 @@ async function waitForReset(cfg, from, cwd, until) {
 var delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // src/login.ts
-var stateFile = (name) => path7.join(paths.stateDir(), `login-${name}.json`);
-var codeFile = (name) => path7.join(paths.stateDir(), `login-${name}.code`);
+var stateFile = (name) => path8.join(paths.stateDir(), `login-${name}.json`);
+var codeFile = (name) => path8.join(paths.stateDir(), `login-${name}.code`);
 var WAIT_FOR_CODE_MS = 15 * 6e4;
 function loginEnv(p) {
   const env = buildEnv(p, { id: "login", pid: process.pid, profile: p.name, cwd: process.cwd(), busy: false, startedAt: Date.now() });
@@ -1107,9 +1298,9 @@ function startLogin(name, email, json) {
     const deadline2 = Date.now() + 5e3;
     while (alive(prev.pid) && Date.now() < deadline2) sleepSync(100);
   }
-  fs8.rmSync(codeFile(name), { force: true });
+  fs9.rmSync(codeFile(name), { force: true });
   writeJson(stateFile(name), { status: "starting", startedAt: Date.now() });
-  const worker = spawn2(process.execPath, [path7.resolve(process.argv[1]), "__login-worker", name, ...email ? ["--email", email] : []], {
+  const worker = spawn2(process.execPath, [path8.resolve(process.argv[1]), "__login-worker", name, ...email ? ["--email", email] : []], {
     detached: true,
     stdio: "ignore",
     env: process.env
@@ -1122,7 +1313,7 @@ function startLogin(name, email, json) {
     st = readJson(stateFile(name), null);
   }
   if (st?.status === "done") {
-    fs8.rmSync(stateFile(name), { force: true });
+    fs9.rmSync(stateFile(name), { force: true });
     if (json) console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "logged_in", email: st.email ?? null, org: st.org ?? null }));
     else console.log(`\u2713 ${name}: ${st.email ?? "logged in"}${st.org ? ` (${st.org})` : ""}`);
     return 0;
@@ -1152,8 +1343,8 @@ function cancelLogin(name) {
     const deadline = Date.now() + 5e3;
     while (alive(st.pid) && Date.now() < deadline) sleepSync(100);
   }
-  fs8.rmSync(stateFile(name), { force: true });
-  fs8.rmSync(codeFile(name), { force: true });
+  fs9.rmSync(stateFile(name), { force: true });
+  fs9.rmSync(codeFile(name), { force: true });
   console.log(`No login is waiting for "${name}" anymore.`);
   return 0;
 }
@@ -1162,7 +1353,7 @@ function submitCode(name, code, json) {
   const st = readJson(stateFile(name), null);
   if (!st || st.status !== "waiting" || !alive(st.pid))
     throw new UserError(`no login is waiting for "${name}". Start one with: j2c login ${name} --start`);
-  fs8.writeFileSync(codeFile(name), code.trim() + "\n", { mode: 384 });
+  fs9.writeFileSync(codeFile(name), code.trim() + "\n", { mode: 384 });
   const deadline = Date.now() + 9e4;
   let cur = st;
   while (Date.now() < deadline) {
@@ -1170,7 +1361,7 @@ function submitCode(name, code, json) {
     cur = readJson(stateFile(name), null);
     if (cur?.status === "done" || cur?.status === "failed") break;
   }
-  fs8.rmSync(codeFile(name), { force: true });
+  fs9.rmSync(codeFile(name), { force: true });
   if (cur?.status !== "done") {
     const msg = cur?.status === "failed" ? cur.error ?? "login failed" : "timed out waiting for the login to finish";
     if (json) console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "failed", error: msg }));
@@ -1183,7 +1374,7 @@ function submitCode(name, code, json) {
     console.log(`\u2713 ${name}: ${cur.email ?? "logged in"}${cur.org ? ` (${cur.org})` : ""}`);
     for (const w of warnings) console.log(`! ${w}`);
   }
-  fs8.rmSync(stateFile(name), { force: true });
+  fs9.rmSync(stateFile(name), { force: true });
   return 0;
 }
 async function loginWorker(name, email) {
@@ -1224,8 +1415,8 @@ async function loginWorker(name, email) {
       code = done;
       break;
     }
-    if (!sent && fs8.existsSync(codeFile(name))) {
-      child.stdin.write(fs8.readFileSync(codeFile(name), "utf8"));
+    if (!sent && fs9.existsSync(codeFile(name))) {
+      child.stdin.write(fs9.readFileSync(codeFile(name), "utf8"));
       child.stdin.end();
       sent = true;
     }
@@ -1246,8 +1437,8 @@ async function loginWorker(name, email) {
 }
 
 // src/slash.ts
-import fs9 from "node:fs";
-import path8 from "node:path";
+import fs10 from "node:fs";
+import path9 from "node:path";
 var J2C = `"\${J2C_NODE:-node}" "\${J2C_BIN:-$(command -v j2c)}"`;
 var COMMANDS = {
   use: {
@@ -1263,6 +1454,12 @@ Reply with one short line confirming what julius2claude said above. Do not do an
 
 Reply with one short line confirming what julius2claude said above. Do not do anything else.`
   },
+  stats: {
+    description: "julius2claude: tokens per account and how long each took to reach its limits",
+    body: `!\`${J2C} stats 2>&1\`
+
+Show the report above to the user as-is. Do not do anything else.`
+  },
   status: {
     description: "julius2claude: accounts, limits and which one this session is on",
     body: `!\`${J2C} status 2>&1\`
@@ -1271,11 +1468,11 @@ Show the table above to the user as-is. Do not do anything else.`
   }
 };
 function commandsDir() {
-  return path8.join(defaultClaudeDir(), "commands", "j2c");
+  return path9.join(defaultClaudeDir(), "commands", "j2c");
 }
 function installSlashCommands() {
   const dir = commandsDir();
-  fs9.mkdirSync(dir, { recursive: true });
+  fs10.mkdirSync(dir, { recursive: true });
   const written = [];
   for (const [name, c] of Object.entries(COMMANDS)) {
     const fm = [
@@ -1287,8 +1484,8 @@ function installSlashCommands() {
       "---",
       ""
     ].join("\n");
-    const file = path8.join(dir, `${name}.md`);
-    fs9.writeFileSync(file, fm + c.body + "\n");
+    const file = path9.join(dir, `${name}.md`);
+    fs10.writeFileSync(file, fm + c.body + "\n");
     written.push(file);
   }
   return written;
@@ -1315,6 +1512,9 @@ async function runStatusline(runId, wrapped) {
     if (run && cfg.autoSwitch.enabled && !run.pendingSwitch && shouldLeave(cfg, usage, profile, false)) {
       const next2 = pickNext(cfg, usage, profile, run.cwd);
       if (next2.profile) {
+        const weekly = (livePct(u?.sevenDay) ?? 0) >= cfg.autoSwitch.weeklyPct;
+        const win = weekly ? u?.sevenDay : u?.fiveHour;
+        recordEvent({ type: "threshold", profile: profileName, window: weekly ? "seven_day" : "five_hour", resetsAt: win?.resetsAt });
         const justStopped = !run.busy && run.lastStopAt && Date.now() - run.lastStopAt < BOUNDARY_MS;
         mutateRun(run.id, (r) => {
           r.pendingSwitch ??= {
@@ -1381,6 +1581,7 @@ Every day:
   j2c bind <name> [dir] [--strict]  always use <name> in dir (strict: never any other)
   j2c unbind [dir]
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
+  j2c stats [--days N] [--json]   tokens per account and how long each took to reach its limits
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
 
@@ -1403,7 +1604,7 @@ function parse(argv, valueFlags = []) {
 }
 var str = (v) => typeof v === "string" ? v : void 0;
 function requireSetup() {
-  if (!fs10.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
+  if (!fs11.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
   return loadConfig();
 }
 async function main(argv) {
@@ -1434,7 +1635,7 @@ async function main(argv) {
     case "setup":
       return setup();
     case "add":
-      return add(rest);
+      return add2(rest);
     case "login":
       return login(rest);
     case "__login-worker": {
@@ -1465,6 +1666,8 @@ async function main(argv) {
       return recover(rest);
     case "doctor":
       return doctor();
+    case "stats":
+      return stats(rest);
     case "run":
       return launch(rest);
     default:
@@ -1484,7 +1687,7 @@ async function launch(argv) {
   return supervise({ profile, args, cwd: process.cwd(), keepEnv });
 }
 function setup() {
-  const existed = fs10.existsSync(paths.config());
+  const existed = fs11.existsSync(paths.config());
   const cfg = loadConfig();
   const mainP = cfg.profiles.find((p) => p.isMain);
   if (mainP) {
@@ -1496,7 +1699,7 @@ function setup() {
   const v = claudeVersion();
   console.log(existed ? "julius2claude is already set up; refreshed." : "julius2claude is set up.");
   console.log(`  config:   ${paths.config()}`);
-  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path9.dirname(files[0])})`);
+  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path10.dirname(files[0])})`);
   if (mainP?.account?.email) console.log(`  main:     ${mainP.account.email}${mainP.account.org ? ` (${mainP.account.org})` : ""}`);
   if (!v) console.log("  \u26A0 `claude` was not found on PATH. Install Claude Code: https://code.claude.com");
   else if (!versionAtLeast(v, "2.1.152")) console.log(`  \u26A0 Claude Code ${v} is old; run \`claude update\`.`);
@@ -1510,7 +1713,7 @@ Tip: alias claude=j2c  \u2014 if you want every session supervised.`);
   if (!process.stdin.isTTY) console.log("\nAI agents: follow docs/AGENT-SETUP.md (https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md).");
   return 0;
 }
-function add(argv) {
+function add2(argv) {
   const cfg0 = requireSetup();
   const p = parse(argv, ["aws-profile", "region", "project", "resource", "api-key-helper", "env", "group", "model", "email"]);
   const name = p._[0];
@@ -1562,10 +1765,10 @@ function add(argv) {
   });
   ensureProfileDir(profile);
   if (provider === "apikey") {
-    const file = path9.join(profile.configDir, "settings.json");
-    const s = JSON.parse(fs10.readFileSync(file, "utf8"));
+    const file = path10.join(profile.configDir, "settings.json");
+    const s = JSON.parse(fs11.readFileSync(file, "utf8"));
     s.apiKeyHelper = str(f["api-key-helper"]);
-    fs10.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
+    fs11.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
   }
   console.log(`Added profile "${name}" (${provider}${group ? `, group ${group}` : ""}).`);
   if (PAID.has(provider)) {
@@ -1616,8 +1819,8 @@ function remove(argv) {
     if (c.active === name) c.active = "main";
   });
   if (p.flags.purge) {
-    for (const e of fs10.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs10.unlinkSync(path9.join(prof.configDir, e.name));
-    fs10.rmSync(prof.configDir, { recursive: true, force: true });
+    for (const e of fs11.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs11.unlinkSync(path10.join(prof.configDir, e.name));
+    fs11.rmSync(prof.configDir, { recursive: true, force: true });
     console.log(`Removed "${name}" and its folder. Its login was not revoked; sign out at claude.ai if you want that.`);
   } else console.log(`Removed "${name}". Its folder is kept at ${prof.configDir}.`);
   return 0;
@@ -1742,7 +1945,7 @@ function bind(argv) {
   const [name, dirArg] = p._;
   if (!name) throw new UserError("usage: j2c bind <profile> [dir] [--strict]");
   getProfile(cfg, name);
-  const dir = fs10.realpathSync(path9.resolve(dirArg ?? "."));
+  const dir = fs11.realpathSync(path10.resolve(dirArg ?? "."));
   mutateConfig((c) => {
     c.bindings = c.bindings.filter((b) => b.dir !== dir);
     c.bindings.push({ dir, profile: name, ...p.flags.strict ? { strict: true } : {} });
@@ -1752,7 +1955,7 @@ function bind(argv) {
 }
 function unbind(argv) {
   requireSetup();
-  const dir = fs10.realpathSync(path9.resolve(argv[0] ?? "."));
+  const dir = fs11.realpathSync(path10.resolve(argv[0] ?? "."));
   mutateConfig((c) => void (c.bindings = c.bindings.filter((b) => b.dir !== dir)));
   console.log(`${dir} is no longer bound.`);
   return 0;
@@ -1786,7 +1989,7 @@ function auto(argv) {
 }
 async function recover(argv) {
   const cfg = requireSetup();
-  const list = interruptedSessions().filter((s2) => fs10.existsSync(s2.cwd));
+  const list = interruptedSessions().filter((s2) => fs11.existsSync(s2.cwd));
   if (!list.length) {
     console.log("No interrupted sessions. \u{1F389}");
     return 0;
@@ -1811,6 +2014,40 @@ async function recover(argv) {
     cwd: s.cwd
   });
 }
+var WINDOW_LABEL = {
+  five_hour: "5-hour limit",
+  seven_day: "weekly limit",
+  seven_day_opus: "weekly Opus limit",
+  seven_day_sonnet: "weekly Sonnet limit"
+};
+function stats(argv) {
+  const cfg = requireSetup();
+  const p = parse(argv, ["days"]);
+  const days = str(p.flags.days) ? Number(str(p.flags.days)) : void 0;
+  if (days !== void 0 && (!Number.isFinite(days) || days <= 0)) throw new UserError("--days must be a positive number");
+  const since = days ? Math.floor(Date.now() / 1e3) - days * 86400 : 0;
+  const rows = computeStats(ordered(cfg).map((x) => x.name), since);
+  if (p.flags.json) {
+    console.log(JSON.stringify({ schemaVersion: SCHEMA_VERSION, sinceEpochSec: since || null, profiles: rows }, null, 2));
+    return 0;
+  }
+  const describe2 = (w, s, verb) => `${WINDOW_LABEL[w] ?? w}: ${verb} ${s.count} time${s.count === 1 ? "" : "s"}` + (s.avgElapsedSec !== void 0 ? `, after ${fmtDuration(s.avgElapsedSec)} on average` : "") + (s.avgTokens !== void 0 ? `, ~${fmtTokens(s.avgTokens)} tokens per window` : "");
+  console.log(days ? `Last ${days} day(s). Tokens are counted from sessions started with j2c.
+` : "Tokens are counted from sessions started with j2c.\n");
+  for (const r of rows) {
+    const prof = getProfile(cfg, r.profile);
+    console.log(`${r.profile}${prof.account?.email ? ` (${prof.account.email})` : ` (${prof.provider})`}`);
+    const t = r.total;
+    console.log(`  tokens   last 5h ${fmtTokens(sum(r.last5h))} \xB7 last 7 days ${fmtTokens(sum(r.last7d))} \xB7 total ${fmtTokens(sum(t))}`);
+    if (sum(t)) console.log(`           input ${fmtTokens(t.input)} \xB7 output ${fmtTokens(t.output)} \xB7 cache read ${fmtTokens(t.cacheRead)} \xB7 cache write ${fmtTokens(t.cacheWrite)}`);
+    for (const [w, s] of Object.entries(r.limits)) console.log(`  ${describe2(w, s, "reached")}`);
+    for (const [w, s] of Object.entries(r.thresholds)) console.log(`  ${describe2(w, s, "switched early")}`);
+    if (!Object.keys(r.limits).length && !Object.keys(r.thresholds).length) console.log("  no limits reached yet");
+    if (r.switchesOut || r.switchesIn) console.log(`  switches  ${r.switchesOut} away \xB7 ${r.switchesIn} onto this account`);
+    console.log("");
+  }
+  return 0;
+}
 function doctor() {
   const cfg = requireSetup();
   let problems = 0;
@@ -1834,10 +2071,10 @@ function doctor() {
   if (leaks.length) warn(`${leaks.join(", ")} set in your shell: plain \`claude\` would use it instead of your login. j2c removes it for its sessions (use --keep-env to keep it).`);
   else ok("no auth overrides in your shell");
   if (process.env.CLAUDE_CONFIG_DIR) warn(`CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR} is set in your shell; j2c ignores it and uses each profile's own folder.`);
-  const dotenv = path9.join(process.cwd(), ".env");
-  if (fs10.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs10.readFileSync(dotenv, "utf8")))
+  const dotenv = path10.join(process.cwd(), ".env");
+  if (fs11.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs11.readFileSync(dotenv, "utf8")))
     warn(".env in this folder defines an Anthropic key; some tools load it automatically and bill it instead of your plan.");
-  if (fs10.existsSync(path9.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
+  if (fs11.existsSync(path10.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
   else bad("/j2c:* commands missing (run `j2c setup`)");
   console.log("Profiles");
   for (const p of ordered(cfg)) {
@@ -1848,11 +2085,11 @@ function doctor() {
     if (st === "ok" && cred?.refreshTokenExpiresAt && cred.refreshTokenExpiresAt - Date.now() < 3 * 864e5)
       warn(`${p.name}: login expires ${new Date(cred.refreshTokenExpiresAt).toLocaleDateString()}; start one session on it (\`j2c -P ${p.name}\`) to renew it`);
     if (!p.isMain) {
-      if (!fs10.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
+      if (!fs11.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
       else {
-        const link = path9.join(p.configDir, "projects");
+        const link = path10.join(p.configDir, "projects");
         try {
-          if (!fs10.lstatSync(link).isSymbolicLink() || fs10.realpathSync(link) !== fs10.realpathSync(path9.join(groupStore(p.group), "projects")))
+          if (!fs11.lstatSync(link).isSymbolicLink() || fs11.realpathSync(link) !== fs11.realpathSync(path10.join(groupStore(p.group), "projects")))
             issues.push("history folder not shared (will be repaired on next launch)");
         } catch {
           issues.push("history folder missing (will be repaired on next launch)");
@@ -1873,14 +2110,14 @@ function doctor() {
   if (process.env.WSL_DISTRO_NAME && paths.config().startsWith("/mnt/"))
     bad(`julius2claude data is on the Windows drive (${paths.config()}); links there break. Keep J2C_HOME inside the Linux home.`);
   const stale = defaultClaudeJson();
-  if (!fs10.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
+  if (!fs11.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
   console.log(problems ? `
 ${problems} problem(s) found.` : "\nAll good.");
   return problems ? 1 : 0;
 }
 var isEntry = (() => {
   try {
-    return fs10.realpathSync(process.argv[1] ?? "") === fs10.realpathSync(new URL(import.meta.url).pathname);
+    return fs11.realpathSync(process.argv[1] ?? "") === fs11.realpathSync(new URL(import.meta.url).pathname);
   } catch {
     return false;
   }

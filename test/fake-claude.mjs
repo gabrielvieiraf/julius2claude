@@ -99,7 +99,10 @@ for (const step of plan) {
   if (kind === "turn") {
     hook("UserPromptSubmit", { prompt: "hi" });
     append({ type: "user", message: { role: "user", content: "hi" } });
-    append({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } });
+    const mid = "msg_" + crypto.randomUUID();
+    const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 1000, cache_creation_input_tokens: 200 };
+    append({ type: "assistant", message: { id: mid, role: "assistant", usage, content: [{ type: "thinking", thinking: "" }] } });
+    append({ type: "assistant", message: { id: mid, role: "assistant", usage, content: [{ type: "text", text: "ok" }] } });
     hook("Stop", {});
     const pct = Number(arg ?? 10);
     const out = statusline({ five_hour: { used_percentage: pct, resets_at: now() + 3600 }, seven_day: { used_percentage: 5, resets_at: now() + 86400 } });
