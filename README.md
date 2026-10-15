@@ -2,13 +2,15 @@
 
 # julius2claude
 
-Multi-account routing and usage-limit failover for Claude Code.
+Use several Claude accounts in Claude Code and switch automatically when one hits its usage limit.
+A Claude Code account switcher that resumes the same session on the next account.
 
 <p align="center">
   <a href="https://tenor.com/view/money-terry-crews-spilled-milk-thrifty-gif-7197529"><img src="https://media.tenor.com/x5fKOq1dsNYAAAAC/money-terry-crews.gif" alt="Julius from Everybody Hates Chris: that's 49 cent of spilled milk dripping all over my table" width="480"></a>
 </p>
 
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
+[![npm downloads](https://img.shields.io/npm/dm/julius2claude?color=cb3837)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 

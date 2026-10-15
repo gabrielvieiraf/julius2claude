@@ -2,13 +2,15 @@
 
 # julius2claude
 
-Roteamento entre várias contas e troca automática por limite de uso para o Claude Code.
+Use várias contas do Claude no Claude Code e troque automaticamente quando uma atingir o limite de uso.
+Um gerenciador de contas do Claude Code que retoma a mesma sessão na próxima conta.
 
 <p align="center">
   <a href="https://tenor.com/view/money-terry-crews-spilled-milk-thrifty-gif-7197529"><img src="https://media.tenor.com/x5fKOq1dsNYAAAAC/money-terry-crews.gif" alt="Julius de Todo Mundo Odeia o Chris: 49 centavos de leite derramado na minha mesa" width="480"></a>
 </p>
 
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
+[![npm downloads](https://img.shields.io/npm/dm/julius2claude?color=cb3837)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 
