@@ -443,3 +443,12 @@ test("recover lists sessions that died mid-reply, not ones that ended or are sti
     sb.cleanup();
   }
 });
+
+test("a resumed session keeps the permission mode, effort and model it had before the switch", () => {
+  assert.deepEqual(
+    sup.liveFlags(["--model", "sonnet", "--permission-mode=plan", "--add-dir", "x"], { permissionMode: "auto", effort: "high", model: "claude-opus-5-5" }, true),
+    ["--add-dir", "x", "--permission-mode", "auto", "--effort", "high", "--model", "claude-opus-5-5"],
+  );
+  assert.deepEqual(sup.liveFlags(["--model", "sonnet"], { model: "claude-opus-5-5" }, false), ["--model", "sonnet"], "model ids don't carry across providers");
+  assert.deepEqual(sup.liveFlags([], { permissionMode: "default" }, true), []);
+});

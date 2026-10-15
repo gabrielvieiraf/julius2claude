@@ -60,7 +60,7 @@ record({
   leakedKey: env.ANTHROPIC_API_KEY ?? null, autoContinue: settings.autoContinueAtUsageLimit ?? null,
 });
 
-const base = { session_id: sessionId, transcript_path: transcript, cwd: process.cwd() };
+const base = { session_id: sessionId, transcript_path: transcript, cwd: process.cwd(), permission_mode: env.FAKE_MODE || "default", effort: { level: "high" } };
 function hook(event, extra = {}) {
   for (const group of settings.hooks?.[event] ?? []) {
     for (const h of group.hooks) {

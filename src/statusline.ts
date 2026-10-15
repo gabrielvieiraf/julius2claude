@@ -1,16 +1,17 @@
 import { spawnSync } from "node:child_process";
-import { loadConfig, getProfile } from "./config.js";
+import { loadConfig, getProfile, withoutBindings } from "./config.js";
 import { pickNext, shouldLeave, usable } from "./router.js";
 import { loadRun, mutateRun } from "./runs.js";
 import { livePct, loadUsage, mutateUsage, recordStatusline } from "./usage.js";
-import { readStdin } from "./hooks.js";
+import { readStdin, rememberLive } from "./hooks.js";
 import { recordEvent } from "./stats.js";
 import { BOUNDARY_MS } from "./runs.js";
 
 export async function runStatusline(runId: string | undefined, wrapped: string | undefined): Promise<string> {
   const raw = await readStdin();
+  if (runId && !raw.agent_id) rememberLive(runId, raw);
   const run = runId ? loadRun(runId) : undefined;
-  const cfg = loadConfig();
+  const cfg = withoutBindings(loadConfig(), run?.noBinding);
   const profileName = run?.profile ?? process.env.J2C_PROFILE;
   const lines: string[] = [];
 
@@ -42,6 +43,15 @@ export async function runStatusline(runId: string | undefined, wrapped: string |
       }
     }
     const fresh = run ? loadRun(run.id) : undefined;
+    const ls = fresh?.lastSwitch;
+    if (ls && Date.now() - ls.at < 15 * 60_000)
+      parts.push(`↪ moved from ${ls.from} (${ls.reason})${ls.fromOrg && ls.toOrg && ls.fromOrg !== ls.toOrg ? `, other organization: ${ls.toOrg}` : ""}`);
+    const warn5 = five !== undefined && five >= 80 && five < cfg.autoSwitch.fiveHourPct;
+    const warn7 = seven !== undefined && seven >= 90 && seven < cfg.autoSwitch.weeklyPct;
+    if ((warn5 || warn7) && !fresh?.pendingSwitch) {
+      const nx = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());
+      parts.push(`⚠ near the ${warn7 ? "weekly" : "5h"} limit${nx.profile ? ` · next: ${nx.profile.name}` : ""}`);
+    }
     if (fresh?.pendingSwitch) parts.push(`↪ switching at end of turn (${fresh.pendingSwitch.reason})`);
     else if (!usable(cfg, usage, profile).ok) {
       const next = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());

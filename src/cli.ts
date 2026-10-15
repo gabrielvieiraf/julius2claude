@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   type Config, type Profile, type Provider, NAME_RE, PAID, UserError,
-  getProfile, loadConfig, mutateConfig, ordered, saveConfig,
+  getProfile, loadConfig, mutateConfig, ordered, saveConfig, withoutBindings,
 } from "./config.js";
 import { runHook } from "./hooks.js";
 import { cancelLogin, loginEnv, loginWorker, recordLogin, startLogin, submitCode } from "./login.js";
@@ -31,6 +31,7 @@ without losing the conversation.
 Usage:
   j2c [claude args...]            start Claude Code on the right account (same args as \`claude\`)
   j2c -P <profile> [claude args]  start on a specific profile
+  j2c --no-binding [claude args]  ignore folder bindings for this session
 
 Setup:
   j2c setup                       first-time setup (adopts your current login as "main")
@@ -161,13 +162,15 @@ async function launch(argv: string[]): Promise<number> {
   requireSetup();
   let profile: string | undefined;
   let keepEnv = false;
+  let noBinding = false;
   const args: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "-P" || argv[i] === "--profile") profile = argv[++i];
     else if (argv[i] === "--keep-env") keepEnv = true;
+    else if (argv[i] === "--no-binding") noBinding = true;
     else args.push(argv[i]);
   }
-  return supervise({ profile, args, cwd: process.cwd(), keepEnv });
+  return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
 
 function setup(): number {
@@ -410,7 +413,7 @@ function next(argv: string[]): number {
   const cfg = requireSetup();
   const run = process.env.J2C_RUN_ID ? loadRun(process.env.J2C_RUN_ID) : undefined;
   const from = run ? getProfile(cfg, run.profile) : getProfile(cfg, cfg.active);
-  const pick = pickNext({ ...cfg, autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
+  const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
     console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
     return 0;

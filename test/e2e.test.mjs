@@ -282,3 +282,75 @@ test("agent login: restarting or cancelling a login never leaves an orphaned `cl
     sb.cleanup();
   }
 });
+
+test("two terminals: when one hits the limit, the other moves at the end of its next reply without hitting it again", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["auto", "on"]);
+    const a = sb.j2cAsync([], { FAKE_ID: sb.env.FAKE_ID + "-a", FAKE_PLAN: JSON.stringify({ main: ["turn:10", "limit", "wait"], work: ["exit"] }) });
+    const b = sb.j2cAsync([], { FAKE_ID: sb.env.FAKE_ID + "-b", FAKE_PLAN: JSON.stringify({ main: ["turn:10", "sleep:2500", "turn:20", "wait"], work: ["exit"] }) });
+    const [ra, rb] = await Promise.all([a, b]);
+    assert.equal(ra.code, 0, ra.err);
+    assert.equal(rb.code, 0, rb.err);
+    const starts = sb.events().filter((e) => e.event === "start");
+    const mains = starts.filter((e) => e.profile === "main");
+    const works = starts.filter((e) => e.profile === "work");
+    assert.equal(mains.length, 2);
+    assert.equal(works.length, 2, "both terminals moved to work");
+    assert.deepEqual(new Set(works.map((w) => w.sessionId)), new Set(mains.map((m) => m.sessionId)), "each terminal kept its own conversation");
+    for (const w of works) assert.equal(w.resumed, true);
+    const limitTurns = sb.events().filter((e) => e.event === "statusline" && e.profile === "main").length;
+    assert.equal(limitTurns, 3, "terminal B finished its reply on main and moved; it never sent a request that was refused");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("--no-binding lets one session use another account in a strictly bound folder", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["bind", "work", ".", "--strict"]);
+    const r = await sb.j2cAsync(["-P", "main", "--no-binding"], { FAKE_PLAN: JSON.stringify({ main: ["exit"] }) });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(sb.events().find((e) => e.event === "start").profile, "main");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("moving to an account in another organization is announced, in the terminal and in the status line", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, []);
+    sb.j2c(["add", "corp"], { FAKE_ACCOUNT: "me@corp.com", FAKE_ORG: "Corp Inc" });
+    sb.j2c(["auto", "on"]);
+    const plan = { main: ["turn:10", "limit", "wait"], corp: ["turn:10", "exit"] };
+    const r = await sb.j2cAsync([], { FAKE_PLAN: JSON.stringify(plan) });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.err, /main → corp/);
+    assert.match(r.err, /another organization \(Corp Inc\)\. Company isolation is off/);
+    const line = sb.events().filter((e) => e.event === "statusline" && e.profile === "corp").pop();
+    assert.match(line.out, /moved from main \(main: rate_limit\), other organization: Corp Inc/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("auto mode survives a switch: the resumed session starts in the same permission mode", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["auto", "on"]);
+    const plan = { main: ["turn:10", "limit", "wait"], work: ["exit"] };
+    const r = await sb.j2cAsync([], { FAKE_MODE: "auto", FAKE_PLAN: JSON.stringify(plan) });
+    assert.equal(r.code, 0, r.err);
+    const w = sb.events().find((e) => e.event === "start" && e.profile === "work");
+    const i = w.args.indexOf("--permission-mode");
+    assert.equal(w.args[i + 1], "auto");
+    assert.equal(w.args[w.args.indexOf("--effort") + 1], "high");
+  } finally {
+    sb.cleanup();
+  }
+});

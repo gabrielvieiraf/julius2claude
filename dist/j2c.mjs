@@ -139,6 +139,9 @@ function ordered(cfg) {
 }
 var UserError = class extends Error {
 };
+function withoutBindings(cfg, skip) {
+  return skip ? { ...cfg, bindings: [] } : cfg;
+}
 var NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 // src/hooks.ts
@@ -456,6 +459,7 @@ function pickNext(cfg, usage, from, cwd, now = nowS()) {
 function shouldLeave(cfg, usage, p, hardRefused, now = nowS()) {
   if (hardRefused) return true;
   if (usable(cfg, usage, p, now).ok) return false;
+  if (activeBlocks(usage[p.name], now).length) return true;
   const entered = usage[p.name]?.enteredAt ?? 0;
   return Date.now() - entered >= cfg.autoSwitch.minDwellMin * 6e4;
 }
@@ -748,6 +752,7 @@ async function runHook(event, runId, input) {
   if (data.agent_id) return;
   const sid = data.session_id;
   if (event !== "session-start" && run.sessionId && sid && sid !== run.sessionId) return;
+  rememberLive(runId, data);
   switch (event) {
     case "session-start":
       mutateRun(runId, (r) => {
@@ -776,6 +781,15 @@ async function runHook(event, runId, input) {
     case "stop-failure":
       return onStopFailure(run, data);
   }
+}
+function rememberLive(runId, data) {
+  const mode = typeof data.permission_mode === "string" ? data.permission_mode : void 0;
+  const effort = typeof data.effort?.level === "string" ? data.effort.level : void 0;
+  const model = typeof data.model?.id === "string" ? data.model.id : typeof data.model === "string" ? data.model : void 0;
+  if (!mode && !effort && !model) return;
+  mutateRun(runId, (r) => {
+    r.live = { ...r.live, ...mode ? { permissionMode: mode } : {}, ...effort ? { effort } : {}, ...model ? { model } : {} };
+  });
 }
 function record(run, sessionId, state, transcriptPath) {
   recordSession({
@@ -1059,7 +1073,7 @@ function stripSettingsFlag(args) {
 var say = (msg) => process.stderr.write(`\x1B[33m[julius2claude]\x1B[0m ${msg}
 `);
 async function supervise(opts) {
-  const cfg = loadConfig();
+  const cfg = withoutBindings(loadConfig(), opts.noBinding);
   const cwd = path7.resolve(opts.cwd);
   const start = pickStart(cfg, loadUsage(), cwd, opts.profile);
   if (!start.profile) throw new UserError(start.reason ?? "no usable profile");
@@ -1070,7 +1084,7 @@ async function supervise(opts) {
   if (!version) throw new UserError("could not run `claude`. Install Claude Code first: https://code.claude.com");
   if (cfg.autoSwitch.enabled && !versionAtLeast(version, "2.1.152"))
     say(`Claude Code ${version} can fail to resume a session on another account. Update with \`claude update\`.`);
-  const run = { id: crypto.randomUUID(), pid: process.pid, profile: profile.name, cwd, busy: false, startedAt: Date.now() };
+  const run = { id: crypto.randomUUID(), pid: process.pid, profile: profile.name, cwd, busy: false, startedAt: Date.now(), ...opts.noBinding ? { noBinding: true } : {} };
   saveRun(run);
   const settingsFile = writeRunSettings(cfg, run, profile, opts.args);
   const ttyState = saveTty();
@@ -1102,7 +1116,7 @@ async function supervise(opts) {
         return outcome.code;
       }
       const cur = loadRun(run.id);
-      const cfgNow = loadConfig();
+      const cfgNow = withoutBindings(loadConfig(), opts.noBinding);
       const pending = cur.pendingSwitch;
       let target;
       let waitUntil;
@@ -1144,12 +1158,18 @@ async function supervise(opts) {
       const from = profile.name;
       profile = target;
       mutateUsage((u) => void ((u[profile.name] ??= {}).enteredAt = Date.now()));
+      const fromOrg = getProfile(cfgNow, from).account?.org;
+      const toOrg = profile.account?.org;
+      const crossOrg = !!fromOrg && !!toOrg && fromOrg !== toOrg;
+      mutateRun(run.id, (r) => void (r.lastSwitch = { from, to: profile.name, reason: pending.reason, at: Date.now(), fromOrg, toOrg }));
       say(`${from} \u2192 ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session\u2026" : ""}`);
+      if (crossOrg && !cfgNow.bindings.some((b) => b.strict))
+        say(`${profile.name} belongs to another organization (${toOrg}). Company isolation is off, so the session moved there. To keep a folder on one account: j2c bind <profile> <folder> --strict`);
       recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
       log(`switch run=${run.id} ${from} -> ${profile.name} reason=${pending.reason} hard=${pending.hard}`);
       const transcriptOk = !!cur.transcriptPath && fs8.existsSync(cur.transcriptPath);
       if (sessionId && transcriptOk) {
-        args = [...carried, "--resume", sessionId];
+        args = [...liveFlags(carried, cur.live, getProfile(cfgNow, from).provider === profile.provider), "--resume", sessionId];
         if (pending.hard) args.push(continuePrompt(from, profile.name, pending.reason, killedTasks));
       } else {
         args = [...stripSettingsFlag(opts.args)];
@@ -1224,6 +1244,32 @@ function describe(pids) {
     }
   }
   return out;
+}
+function liveFlags(carried, live, sameProvider) {
+  const drop = /* @__PURE__ */ new Set();
+  const extra = [];
+  if (live?.permissionMode && live.permissionMode !== "default") {
+    drop.add("--permission-mode");
+    extra.push("--permission-mode", live.permissionMode);
+  }
+  if (live?.effort) {
+    drop.add("--effort");
+    extra.push("--effort", live.effort);
+  }
+  if (live?.model && sameProvider) {
+    drop.add("--model");
+    extra.push("--model", live.model);
+  }
+  const out = [];
+  for (let i = 0; i < carried.length; i++) {
+    const [flag] = carried[i].split("=", 1);
+    if (drop.has(flag)) {
+      if (!carried[i].includes("=")) i++;
+      continue;
+    }
+    out.push(carried[i]);
+  }
+  return [...out, ...extra];
 }
 function continuePrompt(from, to, reason, killed) {
   return [
@@ -1495,8 +1541,9 @@ function installSlashCommands() {
 import { spawnSync as spawnSync2 } from "node:child_process";
 async function runStatusline(runId, wrapped) {
   const raw = await readStdin();
+  if (runId && !raw.agent_id) rememberLive(runId, raw);
   const run = runId ? loadRun(runId) : void 0;
-  const cfg = loadConfig();
+  const cfg = withoutBindings(loadConfig(), run?.noBinding);
   const profileName = run?.profile ?? process.env.J2C_PROFILE;
   const lines = [];
   if (profileName && cfg.profiles.some((p) => p.name === profileName)) {
@@ -1526,6 +1573,15 @@ async function runStatusline(runId, wrapped) {
       }
     }
     const fresh = run ? loadRun(run.id) : void 0;
+    const ls = fresh?.lastSwitch;
+    if (ls && Date.now() - ls.at < 15 * 6e4)
+      parts.push(`\u21AA moved from ${ls.from} (${ls.reason})${ls.fromOrg && ls.toOrg && ls.fromOrg !== ls.toOrg ? `, other organization: ${ls.toOrg}` : ""}`);
+    const warn5 = five !== void 0 && five >= 80 && five < cfg.autoSwitch.fiveHourPct;
+    const warn7 = seven !== void 0 && seven >= 90 && seven < cfg.autoSwitch.weeklyPct;
+    if ((warn5 || warn7) && !fresh?.pendingSwitch) {
+      const nx = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());
+      parts.push(`\u26A0 near the ${warn7 ? "weekly" : "5h"} limit${nx.profile ? ` \xB7 next: ${nx.profile.name}` : ""}`);
+    }
     if (fresh?.pendingSwitch) parts.push(`\u21AA switching at end of turn (${fresh.pendingSwitch.reason})`);
     else if (!usable(cfg, usage, profile).ok) {
       const next2 = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());
@@ -1558,6 +1614,7 @@ without losing the conversation.
 Usage:
   j2c [claude args...]            start Claude Code on the right account (same args as \`claude\`)
   j2c -P <profile> [claude args]  start on a specific profile
+  j2c --no-binding [claude args]  ignore folder bindings for this session
 
 Setup:
   j2c setup                       first-time setup (adopts your current login as "main")
@@ -1678,13 +1735,15 @@ async function launch(argv) {
   requireSetup();
   let profile;
   let keepEnv = false;
+  let noBinding = false;
   const args = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "-P" || argv[i] === "--profile") profile = argv[++i];
     else if (argv[i] === "--keep-env") keepEnv = true;
+    else if (argv[i] === "--no-binding") noBinding = true;
     else args.push(argv[i]);
   }
-  return supervise({ profile, args, cwd: process.cwd(), keepEnv });
+  return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
 function setup() {
   const existed = fs11.existsSync(paths.config());
@@ -1918,7 +1977,7 @@ function next(argv) {
   const cfg = requireSetup();
   const run = process.env.J2C_RUN_ID ? loadRun(process.env.J2C_RUN_ID) : void 0;
   const from = run ? getProfile(cfg, run.profile) : getProfile(cfg, cfg.active);
-  const pick = pickNext({ ...cfg, autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
+  const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
     console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
     return 0;

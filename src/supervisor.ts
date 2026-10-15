@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { type Config, type Profile, loadConfig, getProfile, UserError } from "./config.js";
+import { type Config, type Profile, loadConfig, getProfile, UserError, withoutBindings } from "./config.js";
 import { paths, defaultClaudeDir } from "./paths.js";
 import { ensureProfileDir, loginState } from "./profiles.js";
 import { pickNext, pickStart, allowedIn } from "./router.js";
@@ -29,6 +29,7 @@ export interface SuperviseOptions {
   args: string[];
   cwd: string;
   keepEnv?: boolean;
+  noBinding?: boolean;
 }
 
 export function buildEnv(p: Profile, run: Run, keepEnv = false, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -119,7 +120,7 @@ function stripSettingsFlag(args: string[]): string[] {
 const say = (msg: string) => process.stderr.write(`\x1b[33m[julius2claude]\x1b[0m ${msg}\n`);
 
 export async function supervise(opts: SuperviseOptions): Promise<number> {
-  const cfg = loadConfig();
+  const cfg = withoutBindings(loadConfig(), opts.noBinding);
   const cwd = path.resolve(opts.cwd);
   const start = pickStart(cfg, loadUsage(), cwd, opts.profile);
   if (!start.profile) throw new UserError(start.reason ?? "no usable profile");
@@ -132,7 +133,7 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
   if (cfg.autoSwitch.enabled && !versionAtLeast(version, "2.1.152"))
     say(`Claude Code ${version} can fail to resume a session on another account. Update with \`claude update\`.`);
 
-  const run: Run = { id: crypto.randomUUID(), pid: process.pid, profile: profile.name, cwd, busy: false, startedAt: Date.now() };
+  const run: Run = { id: crypto.randomUUID(), pid: process.pid, profile: profile.name, cwd, busy: false, startedAt: Date.now(), ...(opts.noBinding ? { noBinding: true } : {}) };
   saveRun(run);
   const settingsFile = writeRunSettings(cfg, run, profile, opts.args);
   const ttyState = saveTty();
@@ -167,7 +168,7 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
       }
 
       const cur = loadRun(run.id)!;
-      const cfgNow = loadConfig();
+      const cfgNow = withoutBindings(loadConfig(), opts.noBinding);
       const pending = cur.pendingSwitch!;
       let target: Profile | undefined;
       let waitUntil: number | undefined;
@@ -213,13 +214,19 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
       const from = profile.name;
       profile = target;
       mutateUsage((u) => void ((u[profile.name] ??= {}).enteredAt = Date.now()));
+      const fromOrg = getProfile(cfgNow, from).account?.org;
+      const toOrg = profile.account?.org;
+      const crossOrg = !!fromOrg && !!toOrg && fromOrg !== toOrg;
+      mutateRun(run.id, (r) => void (r.lastSwitch = { from, to: profile.name, reason: pending.reason, at: Date.now(), fromOrg, toOrg }));
       say(`${from} → ${profile.name} (${pending.reason}).${sessionId ? " Resuming the same session…" : ""}`);
+      if (crossOrg && !cfgNow.bindings.some((b) => b.strict))
+        say(`${profile.name} belongs to another organization (${toOrg}). Company isolation is off, so the session moved there. To keep a folder on one account: j2c bind <profile> <folder> --strict`);
       recordEvent({ type: "switch", profile: from, to: profile.name, reason: pending.reason });
       log(`switch run=${run.id} ${from} -> ${profile.name} reason=${pending.reason} hard=${pending.hard}`);
 
       const transcriptOk = !!cur.transcriptPath && fs.existsSync(cur.transcriptPath);
       if (sessionId && transcriptOk) {
-        args = [...carried, "--resume", sessionId];
+        args = [...liveFlags(carried, cur.live, getProfile(cfgNow, from).provider === profile.provider), "--resume", sessionId];
         if (pending.hard) args.push(continuePrompt(from, profile.name, pending.reason, killedTasks));
       } else {
         args = [...stripSettingsFlag(opts.args)];
@@ -299,6 +306,33 @@ function describe(pids: number[]): string[] {
     } catch {}
   }
   return out;
+}
+
+export function liveFlags(carried: string[], live: Run["live"], sameProvider: boolean): string[] {
+  const drop = new Set<string>();
+  const extra: string[] = [];
+  if (live?.permissionMode && live.permissionMode !== "default") {
+    drop.add("--permission-mode");
+    extra.push("--permission-mode", live.permissionMode);
+  }
+  if (live?.effort) {
+    drop.add("--effort");
+    extra.push("--effort", live.effort);
+  }
+  if (live?.model && sameProvider) {
+    drop.add("--model");
+    extra.push("--model", live.model);
+  }
+  const out: string[] = [];
+  for (let i = 0; i < carried.length; i++) {
+    const [flag] = carried[i].split("=", 1);
+    if (drop.has(flag)) {
+      if (!carried[i].includes("=")) i++;
+      continue;
+    }
+    out.push(carried[i]);
+  }
+  return [...out, ...extra];
 }
 
 export function continuePrompt(from: string, to: string, reason: string, killed: string[]): string {

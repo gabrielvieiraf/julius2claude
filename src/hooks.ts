@@ -48,6 +48,7 @@ export async function runHook(event: string, runId: string | undefined, input?: 
   if (data.agent_id) return;
   const sid: string | undefined = data.session_id;
   if (event !== "session-start" && run.sessionId && sid && sid !== run.sessionId) return;
+  rememberLive(runId, data);
 
   switch (event) {
     case "session-start":
@@ -77,6 +78,16 @@ export async function runHook(event: string, runId: string | undefined, input?: 
     case "stop-failure":
       return onStopFailure(run, data);
   }
+}
+
+export function rememberLive(runId: string, data: any): void {
+  const mode = typeof data.permission_mode === "string" ? data.permission_mode : undefined;
+  const effort = typeof data.effort?.level === "string" ? data.effort.level : undefined;
+  const model = typeof data.model?.id === "string" ? data.model.id : typeof data.model === "string" ? data.model : undefined;
+  if (!mode && !effort && !model) return;
+  mutateRun(runId, (r) => {
+    r.live = { ...r.live, ...(mode ? { permissionMode: mode } : {}), ...(effort ? { effort } : {}), ...(model ? { model } : {}) };
+  });
 }
 
 function record(run: Run, sessionId: string, state: "busy" | "idle" | "ended", transcriptPath?: string) {

@@ -17,6 +17,9 @@ export interface Run {
   agents?: string[];
   baselineChildren?: number;
   lastFailureAt?: number;
+  noBinding?: boolean;
+  live?: { permissionMode?: string; effort?: string; model?: string };
+  lastSwitch?: { from: string; to: string; reason: string; at: number; fromOrg?: string; toOrg?: string };
   startedAt: number;
 }
 

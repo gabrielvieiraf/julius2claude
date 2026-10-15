@@ -84,4 +84,8 @@ export function ordered(cfg: Config): Profile[] {
 
 export class UserError extends Error {}
 
+export function withoutBindings(cfg: Config, skip: boolean | undefined): Config {
+  return skip ? { ...cfg, bindings: [] } : cfg;
+}
+
 export const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
