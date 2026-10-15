@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import fs13 from "node:fs";
-import path11 from "node:path";
+import fs14 from "node:fs";
+import path12 from "node:path";
 
 import os from "node:os";
 import path from "node:path";
@@ -1934,6 +1934,89 @@ No other account can take it now (${next2.reason})${next2.waitUntil ? `; the fir
   });
 }
 
+import fs13 from "node:fs";
+import path11 from "node:path";
+var MARKER = "julius2claude-shim";
+function shimDir() {
+  if (process.env.J2C_SHIM_DIR) return process.env.J2C_SHIM_DIR;
+  return path11.dirname(process.argv[1] ?? process.execPath);
+}
+function shimPath(dir, profile) {
+  return path11.join(dir, process.platform === "win32" ? `claude-${profile}.cmd` : `claude-${profile}`);
+}
+function body(dir, profile) {
+  if (process.platform === "win32") return `@echo off\r
+rem ${MARKER}\r
+j2c -P ${profile} %*\r
+`;
+  const j2c = fs13.existsSync(path11.join(dir, "j2c")) ? path11.join(dir, "j2c") : "j2c";
+  return `#!/bin/sh
+# ${MARKER}
+exec "${j2c}" -P ${profile} "$@"
+`;
+}
+function ours(file) {
+  try {
+    return fs13.readFileSync(file, "utf8").includes(MARKER);
+  } catch {
+    return false;
+  }
+}
+function syncShims(cfg, dir = shimDir()) {
+  const res = { created: [], skipped: [], removed: [] };
+  const wanted = new Set(cfg.profiles.map((p) => shimPath(dir, p.name)));
+  for (const p of cfg.profiles) {
+    const file = shimPath(dir, p.name);
+    if (fs13.existsSync(file) && !ours(file)) {
+      res.skipped.push(file);
+      continue;
+    }
+    const content = body(dir, p.name);
+    let cur = "";
+    try {
+      cur = fs13.readFileSync(file, "utf8");
+    } catch {
+    }
+    if (cur !== content) {
+      try {
+        fs13.writeFileSync(file, content, { mode: 493 });
+        res.created.push(file);
+      } catch {
+        res.skipped.push(file);
+      }
+    }
+  }
+  let names = [];
+  try {
+    names = fs13.readdirSync(dir).filter((n) => n.startsWith("claude-"));
+  } catch {
+  }
+  for (const n of names) {
+    const file = path11.join(dir, n);
+    if (!wanted.has(file) && ours(file)) {
+      fs13.rmSync(file, { force: true });
+      res.removed.push(file);
+    }
+  }
+  return res;
+}
+function removeAllShims(dir = shimDir()) {
+  const removed = [];
+  let names = [];
+  try {
+    names = fs13.readdirSync(dir).filter((n) => n.startsWith("claude-"));
+  } catch {
+  }
+  for (const n of names) {
+    const file = path11.join(dir, n);
+    if (ours(file)) {
+      fs13.rmSync(file, { force: true });
+      removed.push(file);
+    }
+  }
+  return removed;
+}
+
 var VERSION = true ? "0.4.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
@@ -1995,7 +2078,7 @@ function parse(argv, valueFlags = []) {
 }
 var str = (v) => typeof v === "string" ? v : void 0;
 function requireSetup() {
-  if (!fs13.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
+  if (!fs14.existsSync(paths.config())) throw new UserError("julius2claude is not set up yet. Run `j2c setup` first.");
   return loadConfig();
 }
 async function main(argv) {
@@ -2055,6 +2138,8 @@ async function main(argv) {
       return auto(rest);
     case "recover":
       return recover(rest);
+    case "shims":
+      return shims(rest);
     case "rescue": {
       requireSetup();
       const p = parse(rest, ["session", "to", "model", "note"]);
@@ -2088,8 +2173,25 @@ async function launch(argv) {
   }
   return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
+function reportShims(r, verbose) {
+  for (const f of r.created) console.log(`  command: ${path12.basename(f).replace(/\.cmd$/, "")}`);
+  for (const f of r.skipped) if (verbose) console.log(`  ! ${f} exists and is not a julius2claude command; left untouched`);
+}
+function shims(argv) {
+  const cfg = requireSetup();
+  if (argv.includes("--remove")) {
+    const removed = removeAllShims();
+    console.log(removed.length ? `Removed ${removed.length} command(s) from ${shimDir()}.` : "No julius2claude commands to remove.");
+    return 0;
+  }
+  const r = syncShims(cfg);
+  console.log(`Per-profile commands in ${shimDir()}:`);
+  for (const p of cfg.profiles) console.log(`  claude-${p.name}   = j2c -P ${p.name}`);
+  reportShims({ created: [], skipped: r.skipped }, true);
+  return 0;
+}
 function setup() {
-  const existed = fs13.existsSync(paths.config());
+  const existed = fs14.existsSync(paths.config());
   const cfg = loadConfig();
   const mainP = cfg.profiles.find((p) => p.isMain);
   if (mainP) {
@@ -2098,10 +2200,11 @@ function setup() {
   }
   saveConfig(cfg);
   const files = installSlashCommands();
+  syncShims(cfg);
   const v = claudeVersion();
   console.log(existed ? "julius2claude is already set up; refreshed." : "julius2claude is set up.");
   console.log(`  config:   ${paths.config()}`);
-  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path11.dirname(files[0])})`);
+  console.log(`  commands: /j2c:use, /j2c:next, /j2c:status (${path12.dirname(files[0])})`);
   if (mainP?.account?.email) console.log(`  main:     ${mainP.account.email}${mainP.account.org ? ` (${mainP.account.org})` : ""}`);
   if (!v) console.log("  \u26A0 `claude` was not found on PATH. Install Claude Code: https://code.claude.com");
   else if (!versionAtLeast(v, "2.1.152")) console.log(`  \u26A0 Claude Code ${v} is old; run \`claude update\`.`);
@@ -2161,16 +2264,17 @@ function add2(argv) {
     ...Object.keys(env).length ? { env } : {},
     ...group && group !== "default" ? { group } : {}
   };
-  mutateConfig((cfg) => {
+  const cfgAfter = mutateConfig((cfg) => {
     cfg.profiles.push(profile);
     if (!cfg.order.includes(name)) cfg.order.push(name);
   });
   ensureProfileDir(profile);
+  reportShims(syncShims(cfgAfter), false);
   if (provider === "apikey") {
-    const file = path11.join(profile.configDir, "settings.json");
-    const s = JSON.parse(fs13.readFileSync(file, "utf8"));
+    const file = path12.join(profile.configDir, "settings.json");
+    const s = JSON.parse(fs14.readFileSync(file, "utf8"));
     s.apiKeyHelper = str(f["api-key-helper"]);
-    fs13.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
+    fs14.writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 384 });
   }
   console.log(`Added profile "${name}" (${provider}${group ? `, group ${group}` : ""}).`);
   if (PAID.has(provider)) {
@@ -2204,15 +2308,16 @@ function remove(argv) {
   const prof = getProfile(cfg, name);
   if (prof.isMain) throw new UserError("the main profile is your normal ~/.claude; it can't be removed.");
   if (liveRuns().some((r) => r.profile === name)) throw new UserError(`"${name}" is in use by a running session.`);
-  mutateConfig((c) => {
+  const cfgAfter = mutateConfig((c) => {
     c.profiles = c.profiles.filter((x) => x.name !== name);
     c.order = c.order.filter((x) => x !== name);
     c.bindings = c.bindings.filter((b) => b.profile !== name);
     if (c.active === name) c.active = "main";
   });
+  syncShims(cfgAfter);
   if (p.flags.purge) {
-    for (const e of fs13.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs13.unlinkSync(path11.join(prof.configDir, e.name));
-    fs13.rmSync(prof.configDir, { recursive: true, force: true });
+    for (const e of fs14.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs14.unlinkSync(path12.join(prof.configDir, e.name));
+    fs14.rmSync(prof.configDir, { recursive: true, force: true });
     console.log(`Removed "${name}" and its folder. Its login was not revoked; sign out at claude.ai if you want that.`);
   } else console.log(`Removed "${name}". Its folder is kept at ${prof.configDir}.`);
   return 0;
@@ -2349,7 +2454,7 @@ function bind(argv) {
   const [name, dirArg] = p._;
   if (!name) throw new UserError("usage: j2c bind <profile> [dir] [--strict]");
   getProfile(cfg, name);
-  const dir = fs13.realpathSync(path11.resolve(dirArg ?? "."));
+  const dir = fs14.realpathSync(path12.resolve(dirArg ?? "."));
   mutateConfig((c) => {
     c.bindings = c.bindings.filter((b) => b.dir !== dir);
     c.bindings.push({ dir, profile: name, ...p.flags.strict ? { strict: true } : {} });
@@ -2359,7 +2464,7 @@ function bind(argv) {
 }
 function unbind(argv) {
   requireSetup();
-  const dir = fs13.realpathSync(path11.resolve(argv[0] ?? "."));
+  const dir = fs14.realpathSync(path12.resolve(argv[0] ?? "."));
   mutateConfig((c) => void (c.bindings = c.bindings.filter((b) => b.dir !== dir)));
   console.log(`${dir} is no longer bound.`);
   return 0;
@@ -2393,7 +2498,7 @@ function auto(argv) {
 }
 async function recover(argv) {
   const cfg = requireSetup();
-  const list = interruptedSessions().filter((s2) => fs13.existsSync(s2.cwd));
+  const list = interruptedSessions().filter((s2) => fs14.existsSync(s2.cwd));
   if (!list.length) {
     console.log("No interrupted sessions. \u{1F389}");
     return 0;
@@ -2520,10 +2625,10 @@ function doctor() {
   if (leaks.length) warn(`${leaks.join(", ")} set in your shell: plain \`claude\` would use it instead of your login. j2c removes it for its sessions (use --keep-env to keep it).`);
   else ok("no auth overrides in your shell");
   if (process.env.CLAUDE_CONFIG_DIR) warn(`CLAUDE_CONFIG_DIR=${process.env.CLAUDE_CONFIG_DIR} is set in your shell; j2c ignores it and uses each profile's own folder.`);
-  const dotenv = path11.join(process.cwd(), ".env");
-  if (fs13.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs13.readFileSync(dotenv, "utf8")))
+  const dotenv = path12.join(process.cwd(), ".env");
+  if (fs14.existsSync(dotenv) && /^\s*(export\s+)?ANTHROPIC_(API_KEY|AUTH_TOKEN)\s*=/m.test(fs14.readFileSync(dotenv, "utf8")))
     warn(".env in this folder defines an Anthropic key; some tools load it automatically and bill it instead of your plan.");
-  if (fs13.existsSync(path11.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
+  if (fs14.existsSync(path12.join(commandsDir(), "use.md"))) ok("/j2c:* commands installed");
   else bad("/j2c:* commands missing (run `j2c setup`)");
   console.log("Profiles");
   for (const p of ordered(cfg)) {
@@ -2534,11 +2639,11 @@ function doctor() {
     if (st === "ok" && cred?.refreshTokenExpiresAt && cred.refreshTokenExpiresAt - Date.now() < 3 * 864e5)
       warn(`${p.name}: login expires ${new Date(cred.refreshTokenExpiresAt).toLocaleDateString()}; start one session on it (\`j2c -P ${p.name}\`) to renew it`);
     if (!p.isMain) {
-      if (!fs13.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
+      if (!fs14.existsSync(p.configDir)) issues.push("folder missing \u2192 j2c login " + p.name);
       else {
-        const link = path11.join(p.configDir, "projects");
+        const link = path12.join(p.configDir, "projects");
         try {
-          if (!fs13.lstatSync(link).isSymbolicLink() || fs13.realpathSync(link) !== fs13.realpathSync(path11.join(groupStore(p.group), "projects")))
+          if (!fs14.lstatSync(link).isSymbolicLink() || fs14.realpathSync(link) !== fs14.realpathSync(path12.join(groupStore(p.group), "projects")))
             issues.push("history folder not shared (will be repaired on next launch)");
         } catch {
           issues.push("history folder missing (will be repaired on next launch)");
@@ -2559,14 +2664,14 @@ function doctor() {
   if (process.env.WSL_DISTRO_NAME && paths.config().startsWith("/mnt/"))
     bad(`julius2claude data is on the Windows drive (${paths.config()}); links there break. Keep J2C_HOME inside the Linux home.`);
   const stale = defaultClaudeJson();
-  if (!fs13.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
+  if (!fs14.existsSync(stale)) warn(`${stale} not found; is Claude Code set up for this user?`);
   console.log(problems ? `
 ${problems} problem(s) found.` : "\nAll good.");
   return problems ? 1 : 0;
 }
 var isEntry = (() => {
   try {
-    return fs13.realpathSync(process.argv[1] ?? "") === fs13.realpathSync(new URL(import.meta.url).pathname);
+    return fs14.realpathSync(process.argv[1] ?? "") === fs14.realpathSync(new URL(import.meta.url).pathname);
   } catch {
     return false;
   }

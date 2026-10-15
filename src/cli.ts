@@ -15,6 +15,7 @@ import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
 import { rescue } from "./rescue.js";
+import { removeAllShims, shimDir, syncShims } from "./shims.js";
 import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
 import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
@@ -152,6 +153,8 @@ export async function main(argv: string[]): Promise<number> {
       return auto(rest);
     case "recover":
       return recover(rest);
+    case "shims":
+      return shims(rest);
     case "rescue": {
       requireSetup();
       const p = parse(rest, ["session", "to", "model", "note"]);
@@ -187,6 +190,25 @@ async function launch(argv: string[]): Promise<number> {
   return supervise({ profile, args, cwd: process.cwd(), keepEnv, noBinding });
 }
 
+function reportShims(r: { created: string[]; skipped: string[] }, verbose: boolean): void {
+  for (const f of r.created) console.log(`  command: ${path.basename(f).replace(/\.cmd$/, "")}`);
+  for (const f of r.skipped) if (verbose) console.log(`  ! ${f} exists and is not a julius2claude command; left untouched`);
+}
+
+function shims(argv: string[]): number {
+  const cfg = requireSetup();
+  if (argv.includes("--remove")) {
+    const removed = removeAllShims();
+    console.log(removed.length ? `Removed ${removed.length} command(s) from ${shimDir()}.` : "No julius2claude commands to remove.");
+    return 0;
+  }
+  const r = syncShims(cfg);
+  console.log(`Per-profile commands in ${shimDir()}:`);
+  for (const p of cfg.profiles) console.log(`  claude-${p.name}   = j2c -P ${p.name}`);
+  reportShims({ created: [], skipped: r.skipped }, true);
+  return 0;
+}
+
 function setup(): number {
   const existed = fs.existsSync(paths.config());
   const cfg = loadConfig();
@@ -197,6 +219,7 @@ function setup(): number {
   }
   saveConfig(cfg);
   const files = installSlashCommands();
+  syncShims(cfg);
   const v = claudeVersion();
   console.log(existed ? "julius2claude is already set up; refreshed." : "julius2claude is set up.");
   console.log(`  config:   ${paths.config()}`);
@@ -261,11 +284,12 @@ function add(argv: string[]): number | Promise<number> {
     ...(Object.keys(env).length ? { env } : {}),
     ...(group && group !== "default" ? { group } : {}),
   };
-  mutateConfig((cfg) => {
+  const cfgAfter = mutateConfig((cfg) => {
     cfg.profiles.push(profile);
     if (!cfg.order.includes(name)) cfg.order.push(name);
   });
   ensureProfileDir(profile);
+  reportShims(syncShims(cfgAfter), false);
   if (provider === "apikey") {
     const file = path.join(profile.configDir, "settings.json");
     const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -306,12 +330,13 @@ function remove(argv: string[]): number {
   const prof = getProfile(cfg, name);
   if (prof.isMain) throw new UserError("the main profile is your normal ~/.claude; it can't be removed.");
   if (liveRuns().some((r) => r.profile === name)) throw new UserError(`"${name}" is in use by a running session.`);
-  mutateConfig((c) => {
+  const cfgAfter = mutateConfig((c) => {
     c.profiles = c.profiles.filter((x) => x.name !== name);
     c.order = c.order.filter((x) => x !== name);
     c.bindings = c.bindings.filter((b) => b.profile !== name);
     if (c.active === name) c.active = "main";
   });
+  syncShims(cfgAfter);
   if (p.flags.purge) {
     for (const e of fs.readdirSync(prof.configDir, { withFileTypes: true })) if (e.isSymbolicLink()) fs.unlinkSync(path.join(prof.configDir, e.name));
     fs.rmSync(prof.configDir, { recursive: true, force: true });

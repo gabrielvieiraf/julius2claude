@@ -464,3 +464,29 @@ test("j2c rescue ignores sessions whose limit already reset and sessions already
     sb.cleanup();
   }
 });
+
+test("per-profile commands: claude-<profile> starts that profile, foreign commands are left alone, removal cleans up", { skip: process.platform === "win32" }, async () => {
+  const sb = sandbox();
+  try {
+    const dir = sb.env.J2C_SHIM_DIR;
+    fs.writeFileSync(path.join(dir, "j2c"), `#!/bin/sh\nexec "${process.execPath}" "${BIN}" "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, "claude-other"), "#!/bin/sh\necho not ours\n", { mode: 0o755 });
+    withAccounts(sb, ["work"]);
+    sb.j2c(["add", "other", "--no-login"]);
+    assert.ok(fs.existsSync(path.join(dir, "claude-main")));
+    assert.ok(fs.existsSync(path.join(dir, "claude-work")));
+    assert.equal(fs.readFileSync(path.join(dir, "claude-other"), "utf8"), "#!/bin/sh\necho not ours\n", "a command that is not ours is never overwritten");
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(path.join(dir, "claude-work"), [], { cwd: sb.work, env: { ...process.env, ...sb.env, FAKE_PLAN: JSON.stringify({ work: ["exit"] }) }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(sb.events().find((e) => e.event === "start").profile, "work");
+    sb.j2c(["remove", "work"]);
+    assert.ok(!fs.existsSync(path.join(dir, "claude-work")));
+    assert.ok(fs.existsSync(path.join(dir, "claude-other")));
+    sb.j2c(["shims", "--remove"]);
+    assert.ok(!fs.existsSync(path.join(dir, "claude-main")));
+    assert.ok(fs.existsSync(path.join(dir, "claude-other")));
+  } finally {
+    sb.cleanup();
+  }
+});
