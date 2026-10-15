@@ -8,15 +8,15 @@ const COMMANDS: Record<string, { description: string; hint?: string; body: strin
   use: {
     description: "julius2claude: move this session to another account (at the end of this turn)",
     hint: "<profile>",
-    body: `!\`${J2C} use $ARGUMENTS --from-session 2>&1\`
+    body: `!\`${J2C} use $ARGUMENTS --from-session --session \${CLAUDE_SESSION_ID} 2>&1\`
 
-Reply with one short line confirming what julius2claude said above. Do not do anything else.`,
+Tell the user what julius2claude said above in one or two short lines, keeping any command exactly as written. Do not do anything else.`,
   },
   next: {
     description: "julius2claude: move this session to the next account with room left",
-    body: `!\`${J2C} next --from-session 2>&1\`
+    body: `!\`${J2C} next --from-session --session \${CLAUDE_SESSION_ID} 2>&1\`
 
-Reply with one short line confirming what julius2claude said above. Do not do anything else.`,
+Tell the user what julius2claude said above in one or two short lines, keeping any command exactly as written. Do not do anything else.`,
   },
   stats: {
     description: "julius2claude: tokens per account and how long each took to reach its limits",

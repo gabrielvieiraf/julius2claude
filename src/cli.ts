@@ -14,6 +14,7 @@ import { bindingFor, pickNext, usable } from "./router.js";
 import { interruptedSessions, liveRuns, loadRun, mutateRun, alive } from "./runs.js";
 import { installSlashCommands, commandsDir } from "./slash.js";
 import { runStatusline } from "./statusline.js";
+import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
 import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
 import { livePct, loadUsage, mutateUsage, activeBlocks } from "./usage.js";
@@ -363,6 +364,12 @@ function status(argv: string[]): number {
   return 0;
 }
 
+function handOff(target: string, sessionId: string | undefined): void {
+  const cmd = sessionId ? `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} --resume ${sessionId}` : `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} -c`;
+  const copied = copyToClipboard(cmd);
+  console.log(`julius2claude: this session was not started with j2c, so it can't switch by itself. Run /exit and then${copied ? " paste (already copied)" : ""}:\n\n  ${cmd}\n\nThis reopens the same conversation on "${target}". Start future sessions with j2c (or alias claude=j2c) and switching happens on its own.`);
+}
+
 function requestSwitch(to: string | undefined, reason: string): string {
   const id = process.env.J2C_RUN_ID;
   const run = id ? loadRun(id) : undefined;
@@ -373,15 +380,14 @@ function requestSwitch(to: string | undefined, reason: string): string {
 
 function use(argv: string[]): number {
   const cfg = requireSetup();
-  const p = parse(argv);
+  const p = parse(argv, ["session"]);
   const name = p._[0];
   if (!name) throw new UserError("usage: j2c use <profile>");
   const target = getProfile(cfg, name);
   if (p.flags["from-session"]) {
     const run = process.env.J2C_RUN_ID ? loadRun(process.env.J2C_RUN_ID) : undefined;
     if (!run) {
-      mutateConfig((c) => void (c.active = name));
-      console.log(`julius2claude: this session was not started with j2c, so it can't move. "${name}" is now the default; start the next session with \`j2c\`.`);
+      handOff(name, str(p.flags.session));
       return 0;
     }
     if (run.profile === name) {
@@ -409,6 +415,10 @@ function next(argv: string[]): number {
   const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
     console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
+    return 0;
+  }
+  if (argv.includes("--from-session") && !run) {
+    handOff(pick.profile.name, str(parse(argv, ["session"]).flags.session));
     return 0;
   }
   if (argv.includes("--from-session") && run) {

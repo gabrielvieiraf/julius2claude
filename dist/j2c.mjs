@@ -1566,15 +1566,15 @@ var COMMANDS = {
   use: {
     description: "julius2claude: move this session to another account (at the end of this turn)",
     hint: "<profile>",
-    body: `!\`${J2C} use $ARGUMENTS --from-session 2>&1\`
+    body: `!\`${J2C} use $ARGUMENTS --from-session --session \${CLAUDE_SESSION_ID} 2>&1\`
 
-Reply with one short line confirming what julius2claude said above. Do not do anything else.`
+Tell the user what julius2claude said above in one or two short lines, keeping any command exactly as written. Do not do anything else.`
   },
   next: {
     description: "julius2claude: move this session to the next account with room left",
-    body: `!\`${J2C} next --from-session 2>&1\`
+    body: `!\`${J2C} next --from-session --session \${CLAUDE_SESSION_ID} 2>&1\`
 
-Reply with one short line confirming what julius2claude said above. Do not do anything else.`
+Tell the user what julius2claude said above in one or two short lines, keeping any command exactly as written. Do not do anything else.`
   },
   stats: {
     description: "julius2claude: tokens per account and how long each took to reach its limits",
@@ -2009,6 +2009,15 @@ function status(argv) {
   console.log("\n\u25B6 this session   * default for new sessions");
   return 0;
 }
+function handOff(target, sessionId) {
+  const cmd = sessionId ? `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} --resume ${sessionId}` : `cd ${JSON.stringify(process.cwd())} && j2c -P ${target} -c`;
+  const copied = copyToClipboard(cmd);
+  console.log(`julius2claude: this session was not started with j2c, so it can't switch by itself. Run /exit and then${copied ? " paste (already copied)" : ""}:
+
+  ${cmd}
+
+This reopens the same conversation on "${target}". Start future sessions with j2c (or alias claude=j2c) and switching happens on its own.`);
+}
 function requestSwitch(to, reason) {
   const id = process.env.J2C_RUN_ID;
   const run = id ? loadRun(id) : void 0;
@@ -2018,15 +2027,14 @@ function requestSwitch(to, reason) {
 }
 function use(argv) {
   const cfg = requireSetup();
-  const p = parse(argv);
+  const p = parse(argv, ["session"]);
   const name = p._[0];
   if (!name) throw new UserError("usage: j2c use <profile>");
   const target = getProfile(cfg, name);
   if (p.flags["from-session"]) {
     const run = process.env.J2C_RUN_ID ? loadRun(process.env.J2C_RUN_ID) : void 0;
     if (!run) {
-      mutateConfig((c) => void (c.active = name));
-      console.log(`julius2claude: this session was not started with j2c, so it can't move. "${name}" is now the default; start the next session with \`j2c\`.`);
+      handOff(name, str(p.flags.session));
       return 0;
     }
     if (run.profile === name) {
@@ -2053,6 +2061,10 @@ function next(argv) {
   const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
     console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
+    return 0;
+  }
+  if (argv.includes("--from-session") && !run) {
+    handOff(pick.profile.name, str(parse(argv, ["session"]).flags.session));
     return 0;
   }
   if (argv.includes("--from-session") && run) {
