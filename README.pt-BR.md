@@ -165,16 +165,9 @@ logo abaixo.
 
 ## Como funciona
 
-```mermaid
-flowchart LR
-  A[j2c] -->|CLAUDE_CONFIG_DIR por perfil<br/>--settings com hooks e statusLine| B[claude]
-  B -- rate_limits da statusLine --> C[(uso por perfil)]
-  B -- hooks Stop e StopFailure --> D[(estado da sessão)]
-  D --> E{limite atingido e<br/>resposta concluída?}
-  E -- sim --> F[encerra o claude]
-  F --> G["claude --resume &lt;sessão&gt;<br/>no próximo perfil"]
-  G --> B
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gabrielvieiraf/julius2claude/main/docs/how-it-works.pt-BR.svg" alt="Fluxo: o j2c inicia o claude por perfil; uso e estado da sessão são acompanhados; quando o limite é atingido e a resposta terminou, o claude é encerrado e a mesma sessão é retomada no próximo perfil" width="560">
+</p>
 
 1. **Isolamento.** O `~/.claude` continua sendo o perfil principal. Os demais perfis ficam em
    `~/.julius2claude/profiles/<nome>`. Histórico, comandos, skills e agentes são compartilhados por

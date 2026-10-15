@@ -164,16 +164,9 @@ The status line shows the active profile and its usage, for example
 
 ## How it works
 
-```mermaid
-flowchart LR
-  A[j2c] -->|CLAUDE_CONFIG_DIR per profile<br/>--settings with hooks and statusLine| B[claude]
-  B -- statusLine rate_limits --> C[(usage per profile)]
-  B -- Stop and StopFailure hooks --> D[(session state)]
-  D --> E{limit reached and<br/>turn finished?}
-  E -- yes --> F[stop claude]
-  F --> G["claude --resume &lt;session&gt;<br/>on the next profile"]
-  G --> B
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/gabrielvieiraf/julius2claude/main/docs/how-it-works.svg" alt="Flow: j2c starts claude per profile; usage and session state are tracked; when a limit is reached and the turn has finished, claude is stopped and the same session is resumed on the next profile" width="560">
+</p>
 
 1. **Isolation.** `~/.claude` remains the main profile. Other profiles live in
    `~/.julius2claude/profiles/<name>`. History, commands, skills and agents are shared through

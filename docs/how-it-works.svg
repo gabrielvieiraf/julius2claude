@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="640" viewBox="0 0 660 640" role="img" aria-label="How julius2claude works: j2c starts claude per profile, tracks usage and session state, and at the end of a turn that hit a limit stops claude and resumes the same session on the next profile">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#57606a"/></marker></defs>
+<rect width="660" height="640" rx="12" fill="#ffffff"/>
+<rect x="300" y="24" width="160" height="46" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="380" y="52" text-anchor="middle" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#1f2328">j2c</text>
+<path d="M380,70 L380,146" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="392" y="102" text-anchor="start" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">CLAUDE_CONFIG_DIR per profile</text><text x="392" y="118" text-anchor="start" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">--settings with hooks and statusLine</text>
+<rect x="300" y="150" width="160" height="46" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="380" y="178" text-anchor="middle" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#1f2328">claude</text>
+<path d="M300,173 L194,173" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="246" y="152" text-anchor="middle" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">statusLine</text><text x="246" y="168" text-anchor="middle" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">rate_limits</text>
+<rect x="20" y="150" width="170" height="46" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="105" y="178" text-anchor="middle" font-size="14" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#1f2328">usage per profile</text>
+<path d="M380,196 L380,256" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="392" y="226" text-anchor="start" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">Stop and StopFailure hooks</text>
+<rect x="300" y="260" width="160" height="46" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="380" y="288" text-anchor="middle" font-size="14" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#1f2328">session state</text>
+<path d="M380,306 L380,328" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<polygon points="380,332 510,382 380,432 250,382" fill="#fff8c5" stroke="#57606a" stroke-width="1.5"/>
+<text x="380" y="378" text-anchor="middle" font-size="14" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#1f2328">limit reached and</text>
+<text x="380" y="396" text-anchor="middle" font-size="14" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#1f2328">turn finished?</text>
+<path d="M380,432 L380,474" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="392" y="458" text-anchor="start" font-size="12" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#57606a">yes</text>
+<rect x="300" y="478" width="160" height="46" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="380" y="506" text-anchor="middle" font-size="14" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" fill="#1f2328">stop claude</text>
+<path d="M380,524 L380,554" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="255" y="558" width="250" height="56" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/><text x="380" y="582" text-anchor="middle" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#1f2328">claude --resume &lt;session&gt;</text><text x="380" y="600" text-anchor="middle" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#1f2328">on the next profile</text>
+<path d="M505,586 L600,586 L600,173 L464,173" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>
