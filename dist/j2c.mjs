@@ -1870,8 +1870,15 @@ async function stopProcess(pid) {
 async function rescue(opts) {
   const cfg = loadConfig();
   let list = stuckSessions(cfg);
-  const here = path10.resolve(process.cwd());
-  if (!opts.all && !opts.session && list.some((s2) => s2.cwd === here)) list = list.filter((s2) => s2.cwd === here);
+  const real2 = (p) => {
+    try {
+      return fs12.realpathSync(p);
+    } catch {
+      return path10.resolve(p);
+    }
+  };
+  const here = real2(process.cwd());
+  if (!opts.all && !opts.session && list.some((s2) => real2(s2.cwd) === here)) list = list.filter((s2) => real2(s2.cwd) === here);
   if (opts.session) list = list.filter((s2) => s2.sessionId === opts.session);
   if (!list.length) {
     console.log(opts.session ? `Session ${opts.session} is not stuck at a usage limit.` : "No session is stuck at a usage limit.");

@@ -236,8 +236,15 @@ export interface RescueOptions {
 export async function rescue(opts: RescueOptions): Promise<number> {
   const cfg = loadConfig();
   let list = stuckSessions(cfg);
-  const here = path.resolve(process.cwd());
-  if (!opts.all && !opts.session && list.some((s) => s.cwd === here)) list = list.filter((s) => s.cwd === here);
+  const real = (p: string) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  const here = real(process.cwd());
+  if (!opts.all && !opts.session && list.some((s) => real(s.cwd) === here)) list = list.filter((s) => real(s.cwd) === here);
   if (opts.session) list = list.filter((s) => s.sessionId === opts.session);
 
   if (!list.length) {

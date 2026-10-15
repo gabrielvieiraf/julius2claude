@@ -438,7 +438,7 @@ test("j2c rescue: closes a plain-claude session stuck at its limit and resumes i
     const start = sb.events().find((e) => e.event === "start");
     assert.equal(start.profile, "work");
     assert.equal(start.sessionId, sid);
-    assert.equal(start.cwd, sb.work);
+    assert.equal(fs.realpathSync(start.cwd), fs.realpathSync(sb.work));
     assert.equal(start.args[start.args.indexOf("--model") + 1], "sonnet");
     assert.match(start.prompt, /weekly limit on account "main" and was moved to "work"/);
     assert.match(start.prompt, /"Realtime collaboration"/);
