@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
-// src/cli.ts
 import fs12 from "node:fs";
 import path10 from "node:path";
 
-// src/paths.ts
 import os from "node:os";
 import path from "node:path";
 function j2cHome() {
@@ -29,7 +27,6 @@ var paths = {
   log: () => path.join(j2cHome(), "j2c.log")
 };
 
-// src/store.ts
 import fs from "node:fs";
 import path2 from "node:path";
 function readJson(file, fallback) {
@@ -90,14 +87,13 @@ function sleepSync(ms) {
 function log(msg) {
   try {
     fs.mkdirSync(path2.dirname(paths.log()), { recursive: true });
-    fs.appendFileSync(paths.log(), `${(/* @__PURE__ */ new Date()).toISOString()} [${process.pid}] ${msg}
+    fs.appendFileSync(paths.log(), `${(new Date()).toISOString()} [${process.pid}] ${msg}
 `);
   } catch {
   }
 }
 
-// src/config.ts
-var PAID = /* @__PURE__ */ new Set(["bedrock", "vertex", "foundry", "apikey"]);
+var PAID = new Set(["bedrock", "vertex", "foundry", "apikey"]);
 function emptyConfig() {
   return {
     version: 1,
@@ -143,14 +139,11 @@ function withoutBindings(cfg, skip) {
 }
 var NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
-// src/hooks.ts
 import fs6 from "node:fs";
 import path6 from "node:path";
 
-// src/router.ts
 import path4 from "node:path";
 
-// src/profiles.ts
 import fs2 from "node:fs";
 import path3 from "node:path";
 var GROUP_DIRS = ["projects", "file-history", "todos", "tasks", "plans"];
@@ -338,7 +331,6 @@ function loginState(p, now = Date.now()) {
   return "ok";
 }
 
-// src/usage.ts
 import fs3 from "node:fs";
 var nowS = () => Math.floor(Date.now() / 1e3);
 function loadUsage() {
@@ -405,7 +397,6 @@ function readTail(file, bytes) {
   }
 }
 
-// src/router.ts
 function usable(cfg, usage, p, now = nowS()) {
   const u = usage[p.name];
   const blocks = activeBlocks(u, now);
@@ -475,7 +466,6 @@ function pickStart(cfg, usage, cwd, explicit) {
   return next2.profile ? next2 : { profile: preferred, bound: !!b, ...next2 };
 }
 
-// src/runs.ts
 import fs4 from "node:fs";
 var BOUNDARY_MS = 3e3;
 function loadRun(id) {
@@ -526,7 +516,6 @@ function interruptedSessions() {
   return names.map((n) => readJson(`${paths.sessionsDir()}/${n}`, null)).filter((s) => !!s && s.state === "busy" && !alive(s.supervisorPid)).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-// src/stats.ts
 import fs5 from "node:fs";
 import path5 from "node:path";
 var WINDOW_SEC = {
@@ -712,7 +701,6 @@ function fmtDuration(sec) {
   return `${m}m`;
 }
 
-// src/hooks.ts
 var HARD_ERRORS = {
   authentication_failed: "login failed (run `j2c login <profile>`)",
   oauth_org_not_allowed: "organization does not allow this login here",
@@ -887,12 +875,10 @@ function limitLabel(type) {
   }
 }
 
-// src/login.ts
 import { spawn as spawn3 } from "node:child_process";
 import fs10 from "node:fs";
 import path8 from "node:path";
 
-// src/proc.ts
 import { execFileSync, spawnSync } from "node:child_process";
 import fs7 from "node:fs";
 function descendants(root) {
@@ -903,7 +889,7 @@ function descendants(root) {
   } catch {
     return [];
   }
-  const kids = /* @__PURE__ */ new Map();
+  const kids = new Map();
   for (const line of out.split("\n")) {
     const [pid, ppid] = line.trim().split(/\s+/).map(Number);
     if (!pid || !ppid) continue;
@@ -962,7 +948,6 @@ function versionAtLeast(v, min) {
   return true;
 }
 
-// src/clipboard.ts
 import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import fs8 from "node:fs";
 function isWsl() {
@@ -998,7 +983,6 @@ function openInBrowser(url) {
   }
 }
 
-// src/supervisor.ts
 import { spawn as spawn2 } from "node:child_process";
 import crypto from "node:crypto";
 import fs9 from "node:fs";
@@ -1016,8 +1000,8 @@ var AUTH_ENV_KEYS = [
   "CLAUDE_CONFIG_DIR",
   "CLAUDE_SECURESTORAGE_CONFIG_DIR"
 ];
-var KEEP_VALUE_FLAGS = /* @__PURE__ */ new Set(["--model", "--permission-mode", "--add-dir", "--agent", "--effort", "--fallback-model"]);
-var KEEP_BOOL_FLAGS = /* @__PURE__ */ new Set([
+var KEEP_VALUE_FLAGS = new Set(["--model", "--permission-mode", "--add-dir", "--agent", "--effort", "--fallback-model"]);
+var KEEP_BOOL_FLAGS = new Set([
   "--dangerously-skip-permissions",
   "--allow-dangerously-skip-permissions",
   "--verbose",
@@ -1281,7 +1265,7 @@ function describe(pids) {
   return out;
 }
 function liveFlags(carried, live, sameProvider) {
-  const drop = /* @__PURE__ */ new Set();
+  const drop = new Set();
   const extra = [];
   if (live?.permissionMode && live.permissionMode !== "default") {
     drop.add("--permission-mode");
@@ -1336,7 +1320,6 @@ async function waitForReset(cfg, from, cwd, until) {
 }
 var delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// src/login.ts
 var stateFile = (name) => path8.join(paths.stateDir(), `login-${name}.json`);
 var codeFile = (name) => path8.join(paths.stateDir(), `login-${name}.code`);
 var WAIT_FOR_CODE_MS = 15 * 6e4;
@@ -1576,7 +1559,6 @@ function readCode(url) {
   });
 }
 
-// src/slash.ts
 import fs11 from "node:fs";
 import path9 from "node:path";
 var J2C = `"\${J2C_NODE:-node}" "\${J2C_BIN:-$(command -v j2c)}"`;
@@ -1637,7 +1619,6 @@ function installSlashCommands() {
   return written;
 }
 
-// src/statusline.ts
 import { spawnSync as spawnSync3 } from "node:child_process";
 async function runStatusline(runId, wrapped) {
   const raw = await readStdin();
@@ -1702,7 +1683,6 @@ function bar(pct) {
   return "\u25B0".repeat(filled) + "\u25B1".repeat(5 - filled);
 }
 
-// src/cli.ts
 var VERSION = true ? "0.2.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
@@ -1980,7 +1960,7 @@ function remove(argv) {
 function fmtReset(epoch) {
   if (!epoch) return "";
   const d = new Date(epoch * 1e3);
-  const sameDay = d.toDateString() === (/* @__PURE__ */ new Date()).toDateString();
+  const sameDay = d.toDateString() === (new Date()).toDateString();
   return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 function status(argv) {
