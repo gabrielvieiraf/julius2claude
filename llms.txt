@@ -17,6 +17,7 @@ Install and use:
 - `j2c` (start Claude Code; accepts the same arguments as `claude`)
 - `j2c auto on` (opt-in automatic failover; `--paid` to allow Bedrock/API-key fallback)
 - Inside Claude Code: `/j2c:use <profile>`, `/j2c:next`, `/j2c:status`
+- `j2c rescue [--model sonnet]` (move a session stuck at a usage limit, even one started with plain `claude`, to the next account and re-run the agents the limit cut)
 - `j2c stats [--json]` (tokens per account, how long each took to reach its 5-hour and weekly limits)
 - `j2c status [--json]`, `j2c bind <profile> [dir] --strict`, `j2c recover`, `j2c doctor`
 

@@ -158,6 +158,7 @@ j2c usage               # uso visual de todos os perfis: barras de 5h e semanal,
 j2c status [--json]     # perfis, uso e horários de renovação
 j2c stats [--days N]    # tokens por perfil e tempo até atingir cada limite
 j2c recover [n]         # lista ou retoma sessões interrompidas
+j2c rescue [n] [--model sonnet]  # move uma sessão travada no limite para a próxima conta
 j2c doctor              # diagnostica problemas comuns
 ```
 
@@ -178,6 +179,22 @@ organização. Uma statusline personalizada já existente é mantida e exibida l
 
 Uma sessão trocada é retomada com o mesmo modo de permissão (por exemplo, auto mode), modelo e
 esforço que tinha, e continua trabalhando sem novos pedidos de permissão.
+
+### Resgatar uma sessão travada no limite
+
+Uma sessão iniciada com `claude` não troca de conta sozinha e, depois de atingir o limite, recusa
+qualquer mensagem, inclusive o `/j2c:next`. Rode `j2c rescue` em qualquer terminal:
+
+```bash
+j2c rescue                    # sessões travadas no limite, das mais recentes para as mais antigas
+j2c rescue 1 --model sonnet   # encerra a sessão e a retoma aqui na próxima conta
+```
+
+Ele mostra a conta e o limite que pararam cada sessão, quando o limite é renovado e quais agentes em
+segundo plano foram interrompidos. Com a sua confirmação, encerra o processo travado, registra o
+limite, retoma a mesma conversa no próximo perfil disponível e pede ao Claude que verifique o que os
+agentes interrompidos concluíram e execute de novo apenas o que faltou. O `--model` vale também para
+os agentes executados novamente.
 
 ### Vários terminais
 

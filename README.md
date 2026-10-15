@@ -158,6 +158,7 @@ j2c usage               # visual usage of every profile: 5h and weekly bars, res
 j2c status [--json]     # profiles, usage, reset times
 j2c stats [--days N]    # tokens per profile and time taken to reach each limit
 j2c recover [n]         # list or resume interrupted sessions
+j2c rescue [n] [--model sonnet]  # move a session stuck at a limit to the next account
 j2c doctor              # diagnose common problems
 ```
 
@@ -178,6 +179,21 @@ existing custom status line is kept and displayed below it.
 
 A switched session resumes with the permission mode (for example auto mode), model and effort it
 had, so it keeps working without new permission prompts.
+
+### Rescuing a session stuck at a limit
+
+A session started with plain `claude` cannot switch by itself, and once it hits a limit it refuses
+every message, including `/j2c:next`. Run `j2c rescue` from any terminal:
+
+```bash
+j2c rescue                    # sessions stuck at a limit, newest first
+j2c rescue 1 --model sonnet   # close it, then resume it here on the next account
+```
+
+It lists the account and limit that stopped each session, when the limit resets and which background
+agents were cut. On confirmation it closes the stuck process, records the limit, resumes the same
+conversation on the next available profile and asks Claude to check what the cut agents finished and
+re-run only what is missing. `--model` also applies to the agents it re-runs.
 
 ### Several terminals
 
