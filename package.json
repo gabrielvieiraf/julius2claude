@@ -1,6 +1,6 @@
 {
   "name": "julius2claude",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Your Claude Code with two jobs: route Claude Code across your accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, API key) and fail over when a limit hits.",
   "license": "AGPL-3.0-only",
   "author": "Gabriel Vieira (https://github.com/gabrielvieiraf)",
