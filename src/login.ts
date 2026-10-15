@@ -4,6 +4,7 @@ import path from "node:path";
 import { type Profile, UserError, getProfile, loadConfig, mutateConfig } from "./config.js";
 import { paths } from "./paths.js";
 import { claudeBin } from "./proc.js";
+import { copyToClipboard, openInBrowser } from "./clipboard.js";
 import { ensureProfileDir, readIdentity, type Identity } from "./profiles.js";
 import { alive } from "./runs.js";
 import { log, readJson, sleepSync, writeJson } from "./store.js";
@@ -60,7 +61,7 @@ function claudeProfile(name: string): Profile {
   return p;
 }
 
-export function startLogin(name: string, email: string | undefined, json: boolean): number {
+export function startLogin(name: string, email: string | undefined, json: boolean, interactive = false): number {
   const p = claudeProfile(name);
   ensureProfileDir(p);
   const prev = readJson<LoginState | null>(stateFile(name), null);
@@ -92,16 +93,17 @@ export function startLogin(name: string, email: string | undefined, json: boolea
     return 0;
   }
   if (!st?.url) throw new UserError(`could not start the login for "${name}"${st?.error ? `: ${st.error}` : ""}.`);
+  const copied = copyToClipboard(st.url);
   if (json) {
-    console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "waiting_for_code", url: st.url, next: `j2c login ${name} --code <code>` }));
+    console.log(JSON.stringify({ schemaVersion: 1, profile: name, status: "waiting_for_code", url: st.url, copied, next: `j2c login ${name} --code <code>` }));
     return 0;
   }
   console.log(`Login for "${name}" is waiting.
 
-1. Open this link and sign in with the account you want for "${name}":
+1. Open this link and sign in with the account you want for "${name}"${copied ? " (already copied to your clipboard)" : ""}:
    ${st.url}
 2. Copy the code shown at the end of the login.
-3. Run: j2c login ${name} --code <code>
+3. ${interactive ? "Paste it here and press Enter." : `Run: j2c login ${name} --code <code>`}
 
 The code only works for this login and expires in a few minutes.`);
   return 0;
@@ -210,4 +212,64 @@ export async function loginWorker(name: string, email: string | undefined): Prom
   }
   const r = recordLogin(name, before);
   set({ status: "done", email: r.email, org: r.org, warnings: r.warnings });
+}
+
+export async function interactiveLogin(name: string, email: string | undefined): Promise<number> {
+  const st0 = startLogin(name, email, false, true);
+  if (st0 !== 0) return st0;
+  const url = readJson<LoginState | null>(stateFile(name), null)?.url;
+  if (!url) return 0;
+  process.stdout.write("\nKeys: c = copy the link, o = open it in the browser. Paste the code and press Enter: ");
+  const code = await readCode(url);
+  if (code === undefined) {
+    cancelLogin(name);
+    return 1;
+  }
+  return submitCode(name, code, false);
+}
+
+function readCode(url: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    let buf = "";
+    const done = (v: string | undefined) => {
+      stdin.off("data", onData);
+      if (stdin.isTTY) stdin.setRawMode(false);
+      stdin.pause();
+      process.stdout.write("\n");
+      resolve(v);
+    };
+    const onData = (chunk: Buffer) => {
+      const s = chunk.toString("utf8");
+      if (s === "\u0003") return done(undefined);
+      if (!buf && s.length === 1 && (s === "c" || s === "C")) {
+        process.stdout.write(copyToClipboard(url) ? "\r\x1b[2Klink copied. Paste the code and press Enter: " : "\r\x1b[2Kno clipboard tool found; copy the link above. Code: ");
+        return;
+      }
+      if (!buf && s.length === 1 && (s === "o" || s === "O")) {
+        process.stdout.write(openInBrowser(url) ? "\r\x1b[2Kopened in the browser. Paste the code and press Enter: " : "\r\x1b[2Kcould not open a browser; copy the link above. Code: ");
+        return;
+      }
+      for (const ch of s) {
+        if (ch === "\r" || ch === "\n") {
+          if (buf.trim()) return done(buf.trim());
+          continue;
+        }
+        if (ch === "\u007f" || ch === "\b") {
+          if (buf) {
+            buf = buf.slice(0, -1);
+            process.stdout.write("\b \b");
+          }
+          continue;
+        }
+        if (ch >= " ") {
+          buf += ch;
+          process.stdout.write("*");
+        }
+      }
+    };
+    if (stdin.isTTY) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on("data", onData);
+  });
 }

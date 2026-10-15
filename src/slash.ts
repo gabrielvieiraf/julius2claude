@@ -26,9 +26,15 @@ Show the report above to the user as-is. Do not do anything else.`,
   },
   status: {
     description: "julius2claude: accounts, limits and which one this session is on",
-    body: `!\`${J2C} status 2>&1\`
+    body: `!\`${J2C} usage --plain 2>&1\`
 
-Show the table above to the user as-is. Do not do anything else.`,
+Show the report above to the user exactly as-is inside a code block. Do not do anything else.`,
+  },
+  usage: {
+    description: "julius2claude: visual usage of every account (5h and weekly bars, resets, tokens)",
+    body: `!\`${J2C} usage --plain 2>&1\`
+
+Show the report above to the user exactly as-is inside a code block. Do not do anything else.`,
   },
 };
 

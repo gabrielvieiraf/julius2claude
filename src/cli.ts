@@ -6,7 +6,7 @@ import {
   getProfile, loadConfig, mutateConfig, ordered, saveConfig, withoutBindings,
 } from "./config.js";
 import { runHook } from "./hooks.js";
-import { cancelLogin, loginEnv, loginWorker, recordLogin, startLogin, submitCode } from "./login.js";
+import { cancelLogin, interactiveLogin, loginWorker, startLogin, submitCode } from "./login.js";
 import { paths, defaultClaudeDir, defaultClaudeJson } from "./paths.js";
 import { claudeBin, claudeVersion, versionAtLeast } from "./proc.js";
 import { ensureProfileDir, groupStore, loginState, readCredentials, readIdentity } from "./profiles.js";
@@ -55,6 +55,7 @@ Every day:
   j2c bind <name> [dir] [--strict]  always use <name> in dir (strict: never any other)
   j2c unbind [dir]
   j2c auto on|off [--paid] [--5h N] [--weekly N] [--dwell MIN]
+  j2c usage                       visual usage of every account (bars, resets, tokens)
   j2c stats [--days N] [--json]   tokens per account and how long each took to reach its limits
   j2c recover [n]                 resume sessions cut off by a crash / WSL restart
   j2c doctor                      check everything that commonly goes wrong
@@ -151,6 +152,8 @@ export async function main(argv: string[]): Promise<number> {
       return doctor();
     case "stats":
       return stats(rest);
+    case "usage":
+      return usageView(rest);
     case "run":
       return launch(rest);
     default:
@@ -201,7 +204,7 @@ Tip: alias claude=j2c  — if you want every session supervised.`);
   return 0;
 }
 
-function add(argv: string[]): number {
+function add(argv: string[]): number | Promise<number> {
   const cfg0 = requireSetup();
   const p = parse(argv, ["aws-profile", "region", "project", "resource", "api-key-helper", "env", "group", "model", "email"]);
   const name = p._[0];
@@ -272,7 +275,7 @@ function add(argv: string[]): number {
   return login([name, ...(str(f.email) ? ["--email", str(f.email)!] : []), ...(f.json ? ["--json"] : [])]);
 }
 
-function login(argv: string[]): number {
+function login(argv: string[]): number | Promise<number> {
   requireSetup();
   const p = parse(argv, ["code", "email"]);
   const name = p._[0];
@@ -281,18 +284,8 @@ function login(argv: string[]): number {
   if (p.flags.cancel) return cancelLogin(name);
   if (p.flags.start) return startLogin(name, str(p.flags.email), json);
   if (str(p.flags.code)) return submitCode(name, str(p.flags.code)!, json);
-  if (!process.stdin.isTTY) return startLogin(name, str(p.flags.email), json);
-  const prof = getProfile(loadConfig(), name);
-  if (prof.provider !== "claude") throw new UserError(`"${name}" is a ${prof.provider} profile; it uses your ${prof.provider} credentials, not a Claude login.`);
-  ensureProfileDir(prof);
-  const before = readIdentity(prof);
-  console.log(`Logging "${name}" in. Sign in with the account you want for this profile.`);
-  const r = spawnSync(claudeBin(), ["auth", "login", ...(str(p.flags.email) ? ["--email", str(p.flags.email)!] : [])], { stdio: "inherit", env: loginEnv(prof) });
-  if (r.status !== 0) throw new UserError("login did not complete.");
-  const res = recordLogin(name, before);
-  console.log(`✓ ${name}: ${res.email ?? "logged in"}${res.org ? ` (${res.org})` : ""}`);
-  for (const w of res.warnings) console.log(`! ${w}`);
-  return 0;
+  if (!process.stdin.isTTY || json) return startLogin(name, str(p.flags.email), json);
+  return interactiveLogin(name, str(p.flags.email));
 }
 
 function remove(argv: string[]): number {
@@ -320,7 +313,7 @@ function fmtReset(epoch: number | undefined): string {
   if (!epoch) return "";
   const d = new Date(epoch * 1000);
   const sameDay = d.toDateString() === new Date().toDateString();
-  return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 function status(argv: string[]): number {
@@ -521,6 +514,52 @@ const WINDOW_LABEL: Record<string, string> = {
   seven_day_opus: "weekly Opus limit",
   seven_day_sonnet: "weekly Sonnet limit",
 };
+
+function usageView(argv: string[]): number {
+  const cfg = requireSetup();
+  const usage = loadUsage();
+  const color = !argv.includes("--plain") && !!process.stdout.isTTY && !process.env.NO_COLOR;
+  const paint = (code: string, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const dim = (s: string) => paint("2", s);
+  const runs = liveRuns();
+  const current = process.env.J2C_RUN_ID ? loadRun(process.env.J2C_RUN_ID) : undefined;
+  const statsBy = new Map(computeStats(cfg.profiles.map((p) => p.name)).map((s) => [s.profile, s]));
+  const bar = (pct: number) => {
+    const w = 24;
+    const filled = Math.max(0, Math.min(w, Math.round((pct / 100) * w)));
+    const c = pct >= 90 ? "31" : pct >= 70 ? "33" : "32";
+    return paint(c, "█".repeat(filled)) + dim("░".repeat(w - filled));
+  };
+  const lines: string[] = [];
+  lines.push(`julius2claude · auto-switch ${cfg.autoSwitch.enabled ? "on" : "off"} · order ${ordered(cfg).map((p) => p.name).join(" → ")}`);
+  lines.push("");
+  for (const p of ordered(cfg)) {
+    const u = usage[p.name];
+    const v = usable(cfg, usage, p);
+    const tags = [
+      current?.profile === p.name ? "this session" : "",
+      cfg.active === p.name ? "default" : "",
+      runs.filter((r) => r.profile === p.name).length ? `${runs.filter((r) => r.profile === p.name).length} running` : "",
+    ].filter(Boolean);
+    const who = p.account?.email ? `${p.account.email}${p.account.org ? ` · ${p.account.org}` : ""}` : p.provider;
+    lines.push(`${paint("1", p.name.padEnd(10))} ${who}${tags.length ? dim(`  [${tags.join(", ")}]`) : ""}`);
+    if (p.provider !== "claude") {
+      lines.push(`  ${dim("pay-per-token, no 5h or weekly limits")}`);
+    } else {
+      for (const [label, w] of [["5h", u?.fiveHour], ["week", u?.sevenDay]] as const) {
+        const pct = livePct(w);
+        if (pct === undefined) lines.push(`  ${label.padEnd(5)} ${dim("unknown until a session runs on this account")}`);
+        else lines.push(`  ${label.padEnd(5)} ${bar(pct)} ${String(Math.round(pct)).padStart(3)}%  ${dim(w && w.resetsAt > Date.now() / 1000 ? `resets ${fmtReset(w.resetsAt)}` : "")}`);
+      }
+    }
+    if (!v.ok) lines.push(`  ${paint("31", `blocked: ${v.reason}${v.availableAt ? ` · back ${fmtReset(v.availableAt)}` : ""}`)}`);
+    const s = statsBy.get(p.name);
+    if (s && sum(s.total)) lines.push(`  ${dim(`tokens ${fmtTokens(sum(s.last5h))} last 5h · ${fmtTokens(sum(s.last7d))} last 7 days`)}`);
+    lines.push("");
+  }
+  console.log(lines.join("\n").trimEnd());
+  return 0;
+}
 
 function stats(argv: string[]): number {
   const cfg = requireSetup();

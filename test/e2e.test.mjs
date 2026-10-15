@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { sandbox, withAccounts } from "./helpers.mjs";
+import path from "node:path";
+import { BIN, sandbox, withAccounts } from "./helpers.mjs";
 
 const starts = (sb) => sb.events().filter((e) => e.event === "start");
 
@@ -350,6 +351,60 @@ test("auto mode survives a switch: the resumed session starts in the same permis
     const i = w.args.indexOf("--permission-mode");
     assert.equal(w.args[i + 1], "auto");
     assert.equal(w.args[w.args.indexOf("--effort") + 1], "high");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("j2c usage draws a bar per window, the reset time and which account is blocked", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["auto", "on"]);
+    const plan = { main: ["turn:62", "limit", "wait"], work: ["turn:10", "exit"] };
+    await sb.j2cAsync([], { FAKE_PLAN: JSON.stringify(plan) });
+    const out = sb.j2c(["usage", "--plain"]).out;
+    assert.match(out, /auto-switch on · order main → work/);
+    assert.match(out, /5h\s+█{15}░{9}\s+62%\s+resets/);
+    assert.match(out, /blocked: 5-hour limit reached · back/);
+    assert.match(out, /work .*\n\s+5h\s+█{2}░{22}\s+10%/);
+    assert.ok(!out.includes("\x1b["), "--plain has no color codes");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("interactive login in a terminal: c copies, o opens, and a pasted code finishes the login", { skip: process.platform !== "linux" }, async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, []);
+    sb.j2c(["add", "work", "--no-login"]);
+    const { spawn } = await import("node:child_process");
+    const bin = path.join(sb.root, "bin");
+    fs.mkdirSync(bin);
+    for (const tool of ["clip.exe", "xclip", "wl-copy", "xsel", "explorer.exe", "xdg-open", "wslview"])
+      fs.writeFileSync(path.join(bin, tool), "#!/bin/sh\ncat > /dev/null 2>&1; echo \"$0 $*\" >> " + JSON.stringify(path.join(sb.root, "tools.log")) + "\n", { mode: 0o755 });
+    const env = { ...process.env, ...sb.env, J2C_NO_CLIPBOARD: "", FAKE_INTERACTIVE_LOGIN: "1", PATH: bin + ":" + process.env.PATH };
+    const child = spawn("script", ["-qfc", `${process.execPath} ${BIN} login work`, "/dev/null"], { cwd: sb.work, env, stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    const waitFor = async (re) => {
+      for (let i = 0; i < 100 && !re.test(out); i++) await new Promise((r) => setTimeout(r, 100));
+      assert.match(out, re);
+    };
+    await waitFor(/Keys: c = copy/);
+    child.stdin.write("c");
+    await waitFor(/link copied/);
+    child.stdin.write("o");
+    await waitFor(/opened in the browser/);
+    child.stdin.write("good-code\r");
+    await waitFor(/✓ work: /);
+    child.stdin.end();
+    await Promise.race([new Promise((r) => child.on("exit", r)), new Promise((r) => setTimeout(r, 3000))]);
+    child.kill("SIGKILL");
+    const tools = fs.readFileSync(path.join(sb.root, "tools.log"), "utf8");
+    assert.match(tools, /(clip\.exe|xclip|wl-copy|xsel)/);
+    assert.match(tools, /(explorer\.exe|wslview|xdg-open) https:\/\/claude\.example/);
   } finally {
     sb.cleanup();
   }

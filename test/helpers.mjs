@@ -19,6 +19,7 @@ export function sandbox() {
     J2C_CLAUDE_BIN: FAKE,
     FAKE_LOG: path.join(root, "fake.log"),
     FAKE_ID: path.basename(root),
+    J2C_NO_CLIPBOARD: "1",
   };
   fs.mkdirSync(env.J2C_CLAUDE_DIR, { recursive: true });
   const work = path.join(root, "repo");
