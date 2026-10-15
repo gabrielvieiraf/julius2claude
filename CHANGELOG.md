@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.4.0...v0.5.0) (2026-10-15)
+
+### Features
+
+* **cli:** add update, uninstall, shell completion, events and JSON output ([08440f4](https://github.com/gabrielvieiraf/julius2claude/commit/08440f4f469e55307ce53e160cf0cb454645efc5))
+* pause profiles and notify about switches and limits ([d8f8a77](https://github.com/gabrielvieiraf/julius2claude/commit/d8f8a7767ab1bd868a24658e5e51cb4cc5d826f3))
+* **shims:** add a claude-<profile> command for every profile ([ffbec86](https://github.com/gabrielvieiraf/julius2claude/commit/ffbec86836d1e1468fe685196996da843c0b57ac))
+
 ## [0.4.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.3.0...v0.4.0) (2026-10-15)
 
 ### Features

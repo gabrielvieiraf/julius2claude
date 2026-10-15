@@ -1,6 +1,6 @@
 {
   "name": "julius2claude",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Claude Code account switcher: use several Claude accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, API key) and switch automatically when one hits its usage limit, resuming the same session.",
   "license": "AGPL-3.0-only",
   "author": "Gabriel Vieira (https://github.com/gabrielvieiraf)",
