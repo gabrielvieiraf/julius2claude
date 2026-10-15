@@ -75,3 +75,9 @@ npm test            # builds dist/, compiles src/ to .test-build/, runs node:tes
 ```
 
 Commit `dist/j2c.mjs` together with source changes (`npm run build`).
+
+## Commits and releases
+
+- Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `build:`, `ci:`, `chore:`); commitlint enforces it through a husky `commit-msg` hook, and `pre-commit` runs the typecheck.
+- Releases are automatic. On every push to `main`, CI runs the tests and then semantic-release picks the next version from the commits, updates `CHANGELOG.md`, publishes to npm with provenance (npm trusted publishing, no token) and creates the GitHub release.
+- Never bump `version` in `package.json` or add release sections to `CHANGELOG.md` by hand.

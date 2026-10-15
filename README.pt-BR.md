@@ -308,6 +308,8 @@ npm install
 npm test
 ```
 
+As mensagens de commit seguem o [Conventional Commits](https://www.conventionalcommits.org) e são verificadas no commit. Releases, changelog e publicação no npm são automatizados a partir delas.
+
 Arquitetura, estrutura de dados e invariantes estão descritos no [AGENTS.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/AGENTS.md). Inclua a
 saída do `j2c doctor` ao reportar problemas.
 

@@ -1,6 +1,6 @@
 {
   "name": "julius2claude",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "description": "Your Claude Code with two jobs: route Claude Code across your accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, API key) and fail over when a limit hits.",
   "license": "AGPL-3.0-only",
   "author": "Gabriel Vieira (https://github.com/gabrielvieiraf)",
@@ -40,11 +40,24 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && esbuild src/*.ts --outdir=.test-build --format=esm --platform=node --target=node18 --log-level=warning && node --test test/*.test.mjs",
-    "prepublishOnly": "npm run typecheck && npm test"
+    "prepublishOnly": "npm run typecheck && npm test",
+    "prepare": "husky || true"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "@semantic-release/changelog": "^7.0.0",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^11.0.1",
     "@types/node": "^26.6.5",
+    "conventional-changelog-conventionalcommits": "^10.4.1",
     "esbuild": "^0.28.2",
+    "husky": "^9.1.7",
+    "semantic-release": "^25.0.9",
     "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
