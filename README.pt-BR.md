@@ -191,8 +191,8 @@ Todos os modos de falha conhecidos na troca de contas do Claude Code estão docu
 [docs/FAILURE-MODES.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/FAILURE-MODES.md) (em inglês), com a mitigação e o teste automatizado
 que cobre cada um. Destaques:
 
-- Tokens de renovação só podem ser usados uma vez. Copiá-los entre contas é a causa mais comum de
-  logins forçados em outras ferramentas, por isso o julius2claude nunca copia credenciais.
+- Tokens de renovação só podem ser usados uma vez. Copiá-los entre contas invalida o login, por
+  isso o julius2claude nunca copia credenciais.
 - Verificações de estado apenas leem arquivos. Comandos como `claude auth status` podem renovar um
   token e nunca são executados.
 - A espera automática do próprio Claude Code no limite de uso é desativada nas sessões
@@ -200,22 +200,6 @@ que cobre cada um. Destaques:
 - Variáveis de autenticação do shell (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK` e outras) são
   removidas para que não substituam um perfil sem aviso.
 - Todo o estado é gravado de forma atômica e com trava.
-
-## Comparação
-
-Situação em outubro de 2026. Correções são bem-vindas por meio de issues.
-
-| | julius2claude | claude-swap / ccswap | tokenmaxxing | ccs |
-|---|---|---|---|---|
-| Nunca copia tokens de login | Sim | Não (troca uma única vaga) | Sim | Sim |
-| Detecta limites sem consultar API privada | Sim | Não (consulta `/api/oauth/usage`) | Sim | Proxy |
-| Recupera uma resposta cortada pelo limite | Sim | Não | Sim | Não |
-| Aguarda subagentes e tarefas em segundo plano antes de trocar | Sim | Não se aplica | Não | Não |
-| Perfis Bedrock, Vertex e Foundry | Sim | Não | Não | Sim |
-| Vínculo estrito de diretórios | Sim | Não | Desconhecido | Desconhecido |
-| Recuperação após falhas | Sim | Não | Não | Não |
-| Comandos dentro do Claude Code | Sim | Apenas ccswap | Desconhecido | Não |
-| Instalação | npm | uv ou pipx | Bun | npm |
 
 ## Perguntas frequentes
 

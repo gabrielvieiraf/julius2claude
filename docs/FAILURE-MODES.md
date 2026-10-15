@@ -2,14 +2,13 @@
 
 > This page is the engineering contract behind julius2claude. Every row names the test that proves it.
 
-This list was built from the issue trackers of every multi-account tool for Claude Code
-(claude-swap, ccswap, ccswitch, tokenmaxxing, caam, ccs) and of `anthropics/claude-code` itself,
-then checked against the Claude Code 2.1.283 binary. Tests live in [`test/`](../test) and run
+This list was built from public issue reports about running Claude Code with several accounts,
+including the `anthropics/claude-code` tracker, and checked against the Claude Code 2.1.283 binary. Tests live in [`test/`](../test) and run
 the real `j2c` supervisor against a fake `claude` that reproduces each failure.
 
 ## Critical — lose the login, or bill money
 
-| # | What goes wrong elsewhere | Root cause | What julius2claude does | Proven by |
+| # | What goes wrong | Root cause | What julius2claude does | Proven by |
 |---|---|---|---|---|
 | 1 | Logins die: `invalid_grant`, "please run /login", every few days | Tools **copy** a refresh token between slots. Refresh tokens are single-use, so whichever copy refreshes first kills the others | Each account lives in its own `CLAUDE_CONFIG_DIR` and logs in there. Credentials are **never copied, moved or symlinked** | `#1 credentials are never copied between profiles` |
 | 2 | "Checking" an account logs it out | `claude auth status` / `doctor` refresh a near-expiry token and exit before saving the new one | Status and health checks only **read files**. `j2c` never runs auth commands to probe | `#2 status/doctor never spawn claude auth commands` |
@@ -20,7 +19,7 @@ the real `j2c` supervisor against a fake `claude` that reproduces each failure.
 
 ## High — lose work, or get fooled by the signal
 
-| # | What goes wrong elsewhere | What julius2claude does | Proven by |
+| # | What goes wrong | What julius2claude does | Proven by |
 |---|---|---|---|
 | 5 | A nested `claude` (run by a tool) fires the hooks and kills/resumes the wrong session | The run id is baked into the `--settings` file of *that* claude process, not the environment, so nested processes never have our hooks. Events with `agent_id` or another `session_id` are ignored | `#5 hooks ignore subagent events, foreign sessions and unknown runs` |
 | 6 | Two processes write the same transcript | The old process tree is stopped and confirmed gone before `--resume`. A session already open in another terminal is never moved | e2e `a claude that ignores Ctrl+C is escalated…` |
@@ -33,7 +32,7 @@ the real `j2c` supervisor against a fake `claude` that reproduces each failure.
 
 ## Medium
 
-| # | What goes wrong elsewhere | What julius2claude does | Proven by |
+| # | What goes wrong | What julius2claude does | Proven by |
 |---|---|---|---|
 | 17 | A symlinked `settings.json` / `.claude.json` silently becomes a copy (Claude writes via temp file + rename) | Only **directories** are linked (`projects`, `file-history`, `todos`, `tasks`, `plans`, `commands`, `skills`, `agents`, `output-styles`, `rules`). Files are generated or copied | `#17 only directories are linked` |
 | 18 | Sharing history deletes files on first merge; removing a profile deletes shared data | Linking over an existing folder merges without overwriting (conflicts kept with a suffix). `remove --purge` unlinks shared folders before deleting | `#18` tests |

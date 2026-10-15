@@ -188,8 +188,8 @@ Every known failure mode of account switching for Claude Code is documented in
 [docs/FAILURE-MODES.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/FAILURE-MODES.md), together with the mitigation and the automated
 test that covers it. Highlights:
 
-- Refresh tokens are single-use. Copying them between slots is the most common cause of forced
-  re-logins in other tools, so julius2claude never copies credentials.
+- Refresh tokens are single-use. Copying them between accounts invalidates the login, so
+  julius2claude never copies credentials.
 - Health checks only read files. Commands such as `claude auth status` can rotate a token and are
   never executed.
 - Claude Code's built-in wait at the usage limit is disabled for supervised sessions while
@@ -197,22 +197,6 @@ test that covers it. Highlights:
 - Authentication variables from the shell (`ANTHROPIC_API_KEY`, `CLAUDE_CODE_USE_BEDROCK` and
   others) are removed so they cannot silently override a profile.
 - All state is written atomically and under a lock.
-
-## Comparison
-
-As of October 2026. Corrections are welcome through issues.
-
-| | julius2claude | claude-swap / ccswap | tokenmaxxing | ccs |
-|---|---|---|---|---|
-| Never copies login tokens | Yes | No (swaps one slot) | Yes | Yes |
-| Detects limits without polling a private API | Yes | No (polls `/api/oauth/usage`) | Yes | Proxy |
-| Recovers a reply cut off by a hard limit | Yes | No | Yes | No |
-| Waits for subagents and background tasks before switching | Yes | Not applicable | No | No |
-| Bedrock, Vertex and Foundry profiles | Yes | No | No | Yes |
-| Strict directory binding | Yes | No | Unknown | Unknown |
-| Crash recovery | Yes | No | No | No |
-| Commands inside Claude Code | Yes | ccswap only | Unknown | No |
-| Installation | npm | uv or pipx | Bun | npm |
 
 ## FAQ
 
