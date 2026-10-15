@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- `j2c stats` and `/j2c:stats`: tokens per account (5 hours, 7 days, total) and, for each limit reached, how long into the window it happened and how many tokens it took.
 - Two-step login for AI agents and scripts: `j2c login <name> --start`, `--code <code>`, `--cancel`, with `--json` output.
 - `j2c add` no longer waits for an interactive login when run without a terminal; it returns the login link instead.
 - `docs/AGENT-SETUP.md`: step-by-step guide that lets Claude Code install and configure julius2claude for the user.

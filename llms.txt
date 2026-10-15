@@ -17,6 +17,7 @@ Install and use:
 - `j2c` (start Claude Code; accepts the same arguments as `claude`)
 - `j2c auto on` (opt-in automatic failover; `--paid` to allow Bedrock/API-key fallback)
 - Inside Claude Code: `/j2c:use <profile>`, `/j2c:next`, `/j2c:status`
+- `j2c stats [--json]` (tokens per account, how long each took to reach its 5-hour and weekly limits)
 - `j2c status [--json]`, `j2c bind <profile> [dir] --strict`, `j2c recover`, `j2c doctor`
 
 Setting it up for a user (AI agents): follow https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/AGENT-SETUP.md . Logins are two-step and non-interactive: `j2c login <name> --start --json` returns a URL for the user; the user pastes the code shown at the end; `j2c login <name> --code <code> --json` finishes it.

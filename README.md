@@ -147,6 +147,7 @@ j2c                     # start on the bound profile, or the default one
 j2c -P work             # start on a specific profile
 j2c use work            # set the default profile
 j2c status [--json]     # profiles, usage, reset times
+j2c stats [--days N]    # tokens per profile and time taken to reach each limit
 j2c recover [n]         # list or resume interrupted sessions
 j2c doctor              # diagnose common problems
 ```
@@ -156,11 +157,36 @@ Inside Claude Code:
 | Command | Description |
 |---|---|
 | `/j2c:status` | Profiles, usage and the profile of the current session |
+| `/j2c:stats` | Tokens per profile and time taken to reach each limit |
 | `/j2c:use <profile>` | Move the current session to a profile at the end of the reply |
 | `/j2c:next` | Move the current session to the next profile with available usage |
 
 The status line shows the active profile and its usage, for example
 `j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. An existing custom status line is kept and displayed below it.
+
+### Usage statistics
+
+`j2c stats` reports, for each profile:
+
+- tokens used in the last 5 hours, the last 7 days and in total, split into input, output, cache
+  read and cache write
+- how many times each limit (5-hour, weekly, weekly per model) was reached, how long after the start
+  of its window on average, and how many tokens were used in that window
+- how many early switches happened at your thresholds, and how many sessions moved away from and
+  onto the profile
+
+```text
+main (me@personal.dev)
+  tokens   last 5h 4.1M · last 7 days 38.2M · total 112.5M
+           input 41.0k · output 1.9M · cache read 104.3M · cache write 6.3M
+  5-hour limit: reached 3 times, after 3h 12m on average, ~4.0M tokens per window
+  weekly limit: reached 1 time, after 4d 6h on average, ~36.9M tokens per window
+  switches  4 away · 1 onto this account
+```
+
+Tokens are read from the session transcripts of sessions started with `j2c`, and each reply is
+counted once, on the profile that produced it. Use `--json` for scripts and `--days N` to limit the
+period.
 
 ## How it works
 

@@ -147,6 +147,7 @@ j2c                     # inicia no perfil vinculado ao diretório ou no padrão
 j2c -P work             # inicia em um perfil específico
 j2c use work            # define o perfil padrão
 j2c status [--json]     # perfis, uso e horários de renovação
+j2c stats [--days N]    # tokens por perfil e tempo até atingir cada limite
 j2c recover [n]         # lista ou retoma sessões interrompidas
 j2c doctor              # diagnostica problemas comuns
 ```
@@ -156,12 +157,36 @@ Dentro do Claude Code:
 | Comando | Descrição |
 |---|---|
 | `/j2c:status` | Perfis, uso e o perfil da sessão atual |
+| `/j2c:stats` | Tokens por perfil e tempo até atingir cada limite |
 | `/j2c:use <perfil>` | Move a sessão atual para um perfil ao final da resposta |
 | `/j2c:next` | Move a sessão atual para o próximo perfil com uso disponível |
 
 A statusline mostra o perfil ativo e o seu uso, por exemplo
 `j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. Uma statusline personalizada já existente é mantida e exibida
 logo abaixo.
+
+### Estatísticas de uso
+
+O `j2c stats` mostra, para cada perfil:
+
+- tokens usados nas últimas 5 horas, nos últimos 7 dias e no total, separados em entrada, saída,
+  leitura de cache e escrita de cache
+- quantas vezes cada limite (5 horas, semanal, semanal por modelo) foi atingido, quanto tempo depois
+  do início da janela em média, e quantos tokens foram usados naquela janela
+- quantas trocas preventivas aconteceram nos seus limites configurados, e quantas sessões saíram e
+  entraram no perfil
+
+```text
+main (me@personal.dev)
+  tokens   last 5h 4.1M · last 7 days 38.2M · total 112.5M
+           input 41.0k · output 1.9M · cache read 104.3M · cache write 6.3M
+  5-hour limit: reached 3 times, after 3h 12m on average, ~4.0M tokens per window
+  weekly limit: reached 1 time, after 4d 6h on average, ~36.9M tokens per window
+  switches  4 away · 1 onto this account
+```
+
+Os tokens são lidos dos históricos das sessões iniciadas com `j2c`, e cada resposta é contada uma
+única vez, no perfil que a gerou. Use `--json` em scripts e `--days N` para limitar o período.
 
 ## Como funciona
 

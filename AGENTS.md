@@ -18,6 +18,8 @@ src/
   statusline.ts   `j2c statusline --run <id>`: records rate_limits, requests proactive switches, renders the line
   router.ts       pure decisions: is a profile usable, which one is next, may this folder use it
   usage.ts        per-account usage snapshots and blocks; reads quota refusals from transcripts
+  stats.ts        token ledger (incremental transcript reads, deduplicated by message id) and limit/switch events
+  login.ts        two-step login (--start / --code / --cancel) through a detached worker
   profiles.ts     profile folders: directory links, generated settings, seeded .claude.json, identity, login state
   runs.ts         run state (one per supervised launch chain) and the crash-recovery session ledger
   store.ts        atomic JSON writes + lockfiles (every state write goes through here)
@@ -46,6 +48,8 @@ dist/j2c.mjs      the published single-file bundle (committed so GitHub installs
   state/runs/<id>.json       live run: profile, sessionId, busy, lastStopAt, pendingSwitch, agents
   state/runs/<id>.settings.json  --settings for that run (hooks + statusLine, run id baked in)
   state/sessions/<id>.json   crash ledger (busy/idle/ended + supervisor pid)
+  state/tokens.json          tokens per profile (total + hourly buckets) and a read cursor per transcript (real path)
+  state/events.jsonl         limit, threshold and switch events with time to limit and tokens in window
 ```
 
 ## Invariants — don't break these
