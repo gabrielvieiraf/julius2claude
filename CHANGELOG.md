@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0
+## 0.3.0
 
 - `j2c usage` and `/j2c:usage`: visual usage per profile (5-hour and weekly bars, reset times, tokens, blocks).
 - Switched sessions keep their permission mode (auto mode included), model and effort.
@@ -8,6 +8,10 @@
 - Several supervised terminals share limits: when one is refused, the others move at the end of their next reply.
 - `--no-binding` ignores directory bindings for one session.
 - Login links are copied to the clipboard automatically; in a terminal, `c` copies and `o` opens the link.
+- The published bundle no longer contains bundler-generated comments.
+
+## 0.2.0
+
 - `j2c stats` and `/j2c:stats`: tokens per account (5 hours, 7 days, total) and, for each limit reached, how long into the window it happened and how many tokens it took.
 - Two-step login for AI agents and scripts: `j2c login <name> --start`, `--code <code>`, `--cancel`, with `--json` output.
 - `j2c add` no longer waits for an interactive login when run without a terminal; it returns the login link instead.
