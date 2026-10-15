@@ -1,4 +1,4 @@
-**English** | [Português](README.pt-BR.md)
+**English** | [Português](https://github.com/gabrielvieiraf/julius2claude/blob/main/README.pt-BR.md)
 
 # julius2claude
 
@@ -10,7 +10,7 @@ Multi-account routing and usage-limit failover for Claude Code.
 
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 
 ## Overview
 
@@ -185,7 +185,7 @@ The status line shows the active profile and its usage, for example
 ## Reliability
 
 Every known failure mode of account switching for Claude Code is documented in
-[docs/FAILURE-MODES.md](docs/FAILURE-MODES.md), together with the mitigation and the automated
+[docs/FAILURE-MODES.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/FAILURE-MODES.md), together with the mitigation and the automated
 test that covers it. Highlights:
 
 - Refresh tokens are single-use. Copying them between slots is the most common cause of forced
@@ -275,12 +275,12 @@ npm install
 npm test
 ```
 
-Architecture, data layout and invariants are described in [AGENTS.md](AGENTS.md). Please include
+Architecture, data layout and invariants are described in [AGENTS.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/AGENTS.md). Please include
 the output of `j2c doctor` in bug reports.
 
 ## License
 
-[AGPL-3.0](LICENSE). If you distribute a modified version, including as a network service, you
+[AGPL-3.0](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE). If you distribute a modified version, including as a network service, you
 must make its source available under the same license.
 
 The name refers to Julius, the father in *Everybody Hates Chris*, who works two jobs and keeps

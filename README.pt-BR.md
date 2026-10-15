@@ -1,4 +1,4 @@
-[English](README.md) | **Português**
+[English](https://github.com/gabrielvieiraf/julius2claude/blob/main/README.md) | **Português**
 
 # julius2claude
 
@@ -10,7 +10,7 @@ Roteamento entre várias contas e troca automática por limite de uso para o Cla
 
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
-[![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](LICENSE)
+[![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE)
 
 ## Visão geral
 
@@ -188,7 +188,7 @@ logo abaixo.
 ## Confiabilidade
 
 Todos os modos de falha conhecidos na troca de contas do Claude Code estão documentados em
-[docs/FAILURE-MODES.md](docs/FAILURE-MODES.md) (em inglês), com a mitigação e o teste automatizado
+[docs/FAILURE-MODES.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/docs/FAILURE-MODES.md) (em inglês), com a mitigação e o teste automatizado
 que cobre cada um. Destaques:
 
 - Tokens de renovação só podem ser usados uma vez. Copiá-los entre contas é a causa mais comum de
@@ -278,12 +278,12 @@ npm install
 npm test
 ```
 
-Arquitetura, estrutura de dados e invariantes estão descritos no [AGENTS.md](AGENTS.md). Inclua a
+Arquitetura, estrutura de dados e invariantes estão descritos no [AGENTS.md](https://github.com/gabrielvieiraf/julius2claude/blob/main/AGENTS.md). Inclua a
 saída do `j2c doctor` ao reportar problemas.
 
 ## Licença
 
-[AGPL-3.0](LICENSE). Quem distribuir uma versão modificada, inclusive como serviço de rede, deve
+[AGPL-3.0](https://github.com/gabrielvieiraf/julius2claude/blob/main/LICENSE). Quem distribuir uma versão modificada, inclusive como serviço de rede, deve
 disponibilizar o código-fonte sob a mesma licença.
 
 O nome faz referência ao Julius, pai do Chris em *Todo Mundo Odeia o Chris*, que tem dois empregos
