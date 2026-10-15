@@ -103,6 +103,12 @@ j2c add az --foundry --resource my-foundry
 j2c add api --api-key-helper "op read op://dev/anthropic/key"
 j2c login <perfil>                                   # fazer login novamente
 j2c login <perfil> --start | --code <código>         # login em duas etapas, usado por agentes de IA
+```
+
+Durante o `j2c login`, aperte `c` para copiar o link de login ou `o` para abrir no navegador, e
+depois cole o código. Quando possível, o link também é copiado automaticamente.
+
+```bash
 j2c remove <perfil> [--purge]
 ```
 
@@ -145,7 +151,10 @@ subdiretórios. No modo estrito, nenhum outro perfil pode ser usado ali.
 ```bash
 j2c                     # inicia no perfil vinculado ao diretório ou no padrão
 j2c -P work             # inicia em um perfil específico
+j2c -c                  # continua a última conversa deste diretório, supervisionada
+j2c --no-binding        # ignora os vínculos de diretório nesta sessão
 j2c use work            # define o perfil padrão
+j2c usage               # uso visual de todos os perfis: barras de 5h e semanal, renovações, tokens
 j2c status [--json]     # perfis, uso e horários de renovação
 j2c stats [--days N]    # tokens por perfil e tempo até atingir cada limite
 j2c recover [n]         # lista ou retoma sessões interrompidas
@@ -156,14 +165,26 @@ Dentro do Claude Code:
 
 | Comando | Descrição |
 |---|---|
+| `/j2c:usage` | Uso visual de todos os perfis |
 | `/j2c:status` | Perfis, uso e o perfil da sessão atual |
 | `/j2c:stats` | Tokens por perfil e tempo até atingir cada limite |
 | `/j2c:use <perfil>` | Move a sessão atual para um perfil ao final da resposta |
 | `/j2c:next` | Move a sessão atual para o próximo perfil com uso disponível |
 
 A statusline mostra o perfil ativo e o seu uso, por exemplo
-`j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. Uma statusline personalizada já existente é mantida e exibida
-logo abaixo.
+`j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. Ela avisa quando um perfil está perto do limite e, depois de
+uma troca, mostra de onde a sessão veio e por quê, inclusive quando ela passa para outra
+organização. Uma statusline personalizada já existente é mantida e exibida logo abaixo.
+
+Uma sessão trocada é retomada com o mesmo modo de permissão (por exemplo, auto mode), modelo e
+esforço que tinha, e continua trabalhando sem novos pedidos de permissão.
+
+### Vários terminais
+
+Todo terminal iniciado com `j2c` é supervisionado, e todos compartilham os mesmos perfis e limites.
+Quando um terminal atinge um limite, os outros no mesmo perfil trocam ao final da próxima resposta,
+sem enviar uma requisição que seria recusada. Sessões iniciadas com `claude` não são
+supervisionadas; reinicie com `j2c -c` no mesmo diretório.
 
 ### Estatísticas de uso
 

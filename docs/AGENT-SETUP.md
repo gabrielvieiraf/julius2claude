@@ -75,7 +75,7 @@ The second command returns:
 {"status": "waiting_for_code", "url": "https://claude.com/cai/oauth/authorize?...", "next": "j2c login <name> --code <code>"}
 ```
 
-Send the user the `url` and tell them:
+Send the user the `url` (when `copied` is true it is already in their clipboard) and tell them:
 
 1. Open the link and sign in with the account intended for `<name>`. If the browser is already
    signed in to a different Claude account, use a private window.

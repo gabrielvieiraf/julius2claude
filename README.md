@@ -103,6 +103,12 @@ j2c add az --foundry --resource my-foundry
 j2c add api --api-key-helper "op read op://dev/anthropic/key"
 j2c login <profile>                                  # log in again
 j2c login <profile> --start | --code <code>          # two-step login, used by AI agents
+```
+
+During `j2c login`, press `c` to copy the login link or `o` to open it in the browser, then paste
+the code. The link is also copied to the clipboard automatically when possible.
+
+```bash
 j2c remove <profile> [--purge]
 ```
 
@@ -145,7 +151,10 @@ In strict mode, no other profile can run there.
 ```bash
 j2c                     # start on the bound profile, or the default one
 j2c -P work             # start on a specific profile
+j2c -c                  # continue the last conversation in this directory, supervised
+j2c --no-binding        # ignore directory bindings for this session
 j2c use work            # set the default profile
+j2c usage               # visual usage of every profile: 5h and weekly bars, resets, tokens
 j2c status [--json]     # profiles, usage, reset times
 j2c stats [--days N]    # tokens per profile and time taken to reach each limit
 j2c recover [n]         # list or resume interrupted sessions
@@ -156,13 +165,26 @@ Inside Claude Code:
 
 | Command | Description |
 |---|---|
+| `/j2c:usage` | Visual usage of every profile |
 | `/j2c:status` | Profiles, usage and the profile of the current session |
 | `/j2c:stats` | Tokens per profile and time taken to reach each limit |
 | `/j2c:use <profile>` | Move the current session to a profile at the end of the reply |
 | `/j2c:next` | Move the current session to the next profile with available usage |
 
 The status line shows the active profile and its usage, for example
-`j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. An existing custom status line is kept and displayed below it.
+`j2c main · 5h ▰▰▰▰▱ 82% · 7d 31%`. It warns when a profile is close to its limit, and after a
+switch it shows where the session came from and why, including moves to another organization. An
+existing custom status line is kept and displayed below it.
+
+A switched session resumes with the permission mode (for example auto mode), model and effort it
+had, so it keeps working without new permission prompts.
+
+### Several terminals
+
+Every terminal started with `j2c` is supervised, and they share the same profiles and limits. When
+one terminal reaches a limit, the others on that profile move at the end of their next reply,
+without sending a request that would be refused. Sessions started with plain `claude` are not
+supervised; restart them with `j2c -c` in the same directory.
 
 ### Usage statistics
 
