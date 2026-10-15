@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.3.0...v0.4.0) (2026-10-15)
+
+### Features
+
+* **rescue:** move sessions stuck at a usage limit to the next account ([32669f0](https://github.com/gabrielvieiraf/julius2claude/commit/32669f0c959d686d3e6d72775df65cf21e03f036))
+
+### Bug Fixes
+
+* **rescue:** compare folders by their real path ([4f90b9f](https://github.com/gabrielvieiraf/julius2claude/commit/4f90b9f9a0306f3909f4bb1e41e7d8b1809a543d))
+
 ## [0.3.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.2.0...v0.3.0) (2026-10-15)
 
 ### Features

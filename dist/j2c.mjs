@@ -1934,7 +1934,7 @@ No other account can take it now (${next2.reason})${next2.waitUntil ? `; the fir
   });
 }
 
-var VERSION = true ? "0.3.0" : "dev";
+var VERSION = true ? "0.4.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
 
