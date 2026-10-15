@@ -4,6 +4,10 @@
 
 Roteamento entre várias contas e troca automática por limite de uso para o Claude Code.
 
+<p align="center">
+  <a href="https://giphy.com/gifs/1x09-reason-everybody-hates-chris-14qBgurY1YOMfe"><img src="https://media.giphy.com/media/14qBgurY1YOMfe/giphy.gif" alt="Julius de Todo Mundo Odeia o Chris segurando dinheiro: 200 dólares são 200 dólares" width="480"></a>
+</p>
+
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-blue)](LICENSE)

@@ -4,6 +4,10 @@
 
 Multi-account routing and usage-limit failover for Claude Code.
 
+<p align="center">
+  <a href="https://giphy.com/gifs/1x09-reason-everybody-hates-chris-14qBgurY1YOMfe"><img src="https://media.giphy.com/media/14qBgurY1YOMfe/giphy.gif" alt="Julius from Everybody Hates Chris holding money: 200 dollars is 200 dollars" width="480"></a>
+</p>
+
 [![npm](https://img.shields.io/npm/v/julius2claude?color=cb3837&logo=npm)](https://www.npmjs.com/package/julius2claude)
 [![CI](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml/badge.svg)](https://github.com/gabrielvieiraf/julius2claude/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
