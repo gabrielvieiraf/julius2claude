@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.5.0...v0.6.0) (2026-10-16)
+
+### Features
+
+* **supervisor:** wait for the first account back instead of stopping the session ([207c918](https://github.com/gabrielvieiraf/julius2claude/commit/207c9183b3e53d27b28303c7b682427aa3063d19))
+
+### Bug Fixes
+
+* **hooks:** recognize limit refusals written after StopFailure fires ([bf079ad](https://github.com/gabrielvieiraf/julius2claude/commit/bf079adedc36e453a026e7100713841d3607e17f))
+
 ## [0.5.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.4.0...v0.5.0) (2026-10-15)
 
 ### Features
