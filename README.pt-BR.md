@@ -75,6 +75,16 @@ Instale e configure o julius2claude para mim. Siga https://github.com/gabrielvie
 O Claude instala o pacote, pergunta quais contas você usa, envia um link de login para cada uma e
 finaliza a configuração. Você só entra na conta e cola o código exibido ao final de cada login.
 
+### Instalar pelo Claude Code
+
+```text
+/plugin marketplace add gabrielvieiraf/julius2claude
+/plugin install julius2claude@julius2claude
+/julius2claude:setup
+```
+
+O plugin adiciona uma skill que executa a mesma configuração guiada.
+
 ### Instalação manual
 
 ```bash

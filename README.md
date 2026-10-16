@@ -75,6 +75,16 @@ Install and set up julius2claude for me. Follow https://github.com/gabrielvieira
 Claude installs the package, asks which accounts you use, sends you a login link for each one and
 finishes the configuration. You only sign in and paste the code shown at the end of each login.
 
+### Install from Claude Code
+
+```text
+/plugin marketplace add gabrielvieiraf/julius2claude
+/plugin install julius2claude@julius2claude
+/julius2claude:setup
+```
+
+The plugin adds one skill that runs the same guided setup.
+
 ### Manual installation
 
 ```bash
