@@ -24,8 +24,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: dist is up to date
-        run: git diff --exit-code dist/
+      - name: generated files are up to date
+        run: git diff --exit-code dist/ plugin/
 
   release:
     needs: test
