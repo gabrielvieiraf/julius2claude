@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.7.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.6.0...v0.7.0) (2026-10-16)
+
+### Features
+
+* **plugin:** install and configure julius2claude from inside Claude Code ([c66ff5b](https://github.com/gabrielvieiraf/julius2claude/commit/c66ff5b503083030b8df05fecf386d582128e42a))
+
 ## [0.6.0](https://github.com/gabrielvieiraf/julius2claude/compare/v0.5.0...v0.6.0) (2026-10-16)
 
 ### Features

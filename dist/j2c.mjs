@@ -2251,7 +2251,7 @@ Finish with: npm uninstall -g julius2claude${process.env.SHELL ? "  (and remove 
   return 0;
 }
 
-var VERSION = true ? "0.6.0" : "dev";
+var VERSION = true ? "0.7.0" : "dev";
 var SCHEMA_VERSION = 1;
 var HELP = `julius2claude (j2c) ${VERSION}: multi-account routing and usage-limit failover for Claude Code.
 
