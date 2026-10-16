@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { loadConfig, getProfile, withoutBindings } from "./config.js";
 import { pickNext, shouldLeave, usable } from "./router.js";
 import { loadRun, mutateRun } from "./runs.js";
-import { livePct, loadUsage, mutateUsage, recordStatusline } from "./usage.js";
+import { fmtWait, livePct, loadUsage, mutateUsage, recordStatusline } from "./usage.js";
 import { readStdin, rememberLive } from "./hooks.js";
 import { recordEvent } from "./stats.js";
 import { BOUNDARY_MS } from "./runs.js";
@@ -55,7 +55,10 @@ export async function runStatusline(runId: string | undefined, wrapped: string |
     if (fresh?.pendingSwitch) parts.push(`↪ switching at end of turn (${fresh.pendingSwitch.reason})`);
     else if (!usable(cfg, usage, profile).ok) {
       const next = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());
-      parts.push(next.profile ? `⚠ ${usable(cfg, usage, profile).reason} · /j2c:next → ${next.profile.name}` : `⚠ ${usable(cfg, usage, profile).reason}`);
+      if (next.profile) parts.push(`⚠ ${usable(cfg, usage, profile).reason} · /j2c:next → ${next.profile.name}`);
+      else if (fresh?.deferredSwitch) parts.push(`⏳ every account at its limit · moving to ${fresh.deferredSwitch.to} at ${fmtWait(fresh.deferredSwitch.at)}`);
+      else if (next.waitUntil) parts.push(`⏳ every account at its limit · first back: ${next.waitProfile ?? profileName} at ${fmtWait(next.waitUntil)}`);
+      else parts.push(`⚠ ${usable(cfg, usage, profile).reason}`);
     }
     lines.push(parts.join(" · "));
     if (u && !u.enteredAt) mutateUsage((s) => void ((s[profileName] ??= {}).enteredAt = Date.now()));

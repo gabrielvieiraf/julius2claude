@@ -21,7 +21,7 @@ import { removeAllShims, shimDir, syncShims } from "./shims.js";
 import { copyToClipboard } from "./clipboard.js";
 import { type WindowStats, computeStats, fmtDuration, fmtTokens, sum } from "./stats.js";
 import { AUTH_ENV_KEYS, supervise } from "./supervisor.js";
-import { livePct, loadUsage, mutateUsage, activeBlocks } from "./usage.js";
+import { fmtWait, livePct, loadUsage, mutateUsage, activeBlocks } from "./usage.js";
 
 declare const __VERSION__: string;
 const VERSION = typeof __VERSION__ === "string" ? __VERSION__ : "dev";
@@ -475,7 +475,11 @@ function next(argv: string[]): number {
   const from = run ? getProfile(cfg, run.profile) : getProfile(cfg, cfg.active);
   const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
-    console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
+    console.log(
+      pick.waitUntil
+        ? `julius2claude: switching would not help, ${pick.reason}. ${pick.waitProfile} is the first back, at ${fmtWait(pick.waitUntil)}.`
+        : `julius2claude: no other account to move to (${pick.reason}).`,
+    );
     return 0;
   }
   if (argv.includes("--from-session") && !run) {
@@ -679,6 +683,14 @@ function usageView(argv: string[]): number {
   };
   const lines: string[] = [];
   lines.push(`julius2claude · auto-switch ${cfg.autoSwitch.enabled ? "on" : "off"} · order ${ordered(cfg).map((p) => p.name).join(" → ")}`);
+  const anyUsable = ordered(cfg).some((p) => !p.paused && (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid) && usable(cfg, usage, p).ok);
+  if (!anyUsable) {
+    const first = ordered(cfg)
+      .map((p) => ({ p, at: usable(cfg, usage, p).availableAt ?? 0 }))
+      .filter((x) => x.at > 0)
+      .sort((a, b) => a.at - b.at)[0];
+    lines.push(paint("33", first ? `Every account is at its limit; switching would not help. First back: ${first.p.name} at ${fmtWait(first.at)}.` : "Every account is blocked; run j2c doctor."));
+  }
   lines.push("");
   for (const p of ordered(cfg)) {
     const u = usage[p.name];

@@ -70,6 +70,18 @@ export function recordStatusline(profile: string, rateLimits: any): void {
   });
 }
 
+export function fmtWait(at: number, now = nowS()): string {
+  const d = new Date(at * 1000);
+  const sameDay = d.toDateString() === new Date(now * 1000).toDateString();
+  const when = sameDay
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const left = Math.max(0, at - now);
+  const h = Math.floor(left / 3600);
+  const m = Math.ceil((left % 3600) / 60);
+  return `${when} (in ${h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`})`;
+}
+
 export interface QuotaRefusal {
   rateLimitType?: string;
   resetsAt?: number;

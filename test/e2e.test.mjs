@@ -16,7 +16,7 @@ test("hard limit: the session moves to the next account and resumes the same con
     assert.equal(r.code, 0, r.err);
     const [a, b] = starts(sb);
     assert.equal(a.profile, "main");
-    assert.equal(a.autoContinue, false, "#7 built-in wait-at-limit disabled");
+    assert.equal(a.autoContinue, null, "#7 Claude Code's own wait-at-limit is left alone");
     assert.equal(b.profile, "work");
     assert.equal(b.resumed, true);
     assert.equal(b.sessionId, a.sessionId, "same conversation");
@@ -96,20 +96,58 @@ test("#20/#6 a claude that ignores Ctrl+C is escalated to SIGTERM, and fully gon
   }
 });
 
-test("#15 every account exhausted: wait for the soonest reset, then resume (no busy loop, no crash)", async () => {
+test("#15 every account exhausted and this one is first back: nothing is stopped, Claude Code keeps its shells and agents", async () => {
   const sb = sandbox();
   try {
     withAccounts(sb, []);
     sb.j2c(["auto", "on"]);
-    const plan = { "main#0": ["turn:10", "limit:five_hour:2", "wait"], "main#1": ["exit"] };
+    const plan = { main: ["turn:10", "limit:five_hour:3600", "sleep:2500", "exit"] };
+    const r = await sb.j2cAsync([], { FAKE_PLAN: JSON.stringify(plan) });
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.err, /every account is at its limit, so switching would not help\. main is the first back/);
+    assert.equal(starts(sb).length, 1, "the session was never restarted");
+    assert.ok(!sb.events().some((e) => e.event === "sigint"), "nothing was stopped");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("#15 every account exhausted and another one is first back: the session waits open and moves when that account frees up", async () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    sb.j2c(["auto", "on"]);
+    const soon = Math.floor(Date.now() / 1000) + 3;
+    fs.mkdirSync(path.join(sb.env.J2C_HOME, "state"), { recursive: true });
+    fs.writeFileSync(path.join(sb.env.J2C_HOME, "state", "usage.json"), JSON.stringify({ work: { blocks: [{ until: soon, reason: "5-hour limit reached", type: "five_hour" }] } }));
+    const plan = { main: ["turn:10", "limit:five_hour:7200", "wait"], work: ["exit"] };
     const t0 = Date.now();
     const r = await sb.j2cAsync([], { FAKE_PLAN: JSON.stringify(plan) });
     assert.equal(r.code, 0, r.err);
-    assert.match(r.err, /every eligible account is at its limit/);
+    assert.match(r.err, /work is the first back, at .*; the session stays open and moves there then/);
     const [a, b] = starts(sb);
-    assert.equal(b.profile, "main");
+    assert.equal(starts(sb).length, 2, "waiting never starts a second claude");
+    assert.equal(b.profile, "work");
     assert.equal(b.sessionId, a.sessionId);
-    assert.ok(Date.now() - t0 >= 2000);
+    assert.ok(Date.now() - t0 >= 2500, "it waited for work to free up");
+    assert.match(sb.j2c(["next"]).out, /work|main/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("when every account is at its limit, next and usage say switching would not help and which account is first back", () => {
+  const sb = sandbox();
+  try {
+    withAccounts(sb, ["work"]);
+    const n = Math.floor(Date.now() / 1000);
+    fs.mkdirSync(path.join(sb.env.J2C_HOME, "state"), { recursive: true });
+    fs.writeFileSync(path.join(sb.env.J2C_HOME, "state", "usage.json"), JSON.stringify({
+      main: { blocks: [{ until: n + 7200, reason: "weekly limit reached", type: "seven_day" }] },
+      work: { blocks: [{ until: n + 1800, reason: "5-hour limit reached", type: "five_hour" }] },
+    }));
+    assert.match(sb.j2c(["next"]).out, /switching would not help.*work is the first back/);
+    assert.match(sb.j2c(["usage", "--plain"]).out, /Every account is at its limit; switching would not help\. First back: work at/);
   } finally {
     sb.cleanup();
   }

@@ -9,7 +9,7 @@ import { pickNext } from "./router.js";
 import { alive, liveRuns } from "./runs.js";
 import { readJson } from "./store.js";
 import { supervise } from "./supervisor.js";
-import { loadUsage, mutateUsage, nowS } from "./usage.js";
+import { fmtWait, loadUsage, mutateUsage, nowS } from "./usage.js";
 
 export interface StuckSession {
   sessionId: string;
@@ -283,7 +283,7 @@ export async function rescue(opts: RescueOptions): Promise<number> {
     target = next.profile;
     if (!target) {
       console.log(describe(cfg, s));
-      console.log(`\nNo other account can take it now (${next.reason})${next.waitUntil ? `; the first one frees up ${new Date(next.waitUntil * 1000).toLocaleString()}` : ""}.`);
+      console.log(next.waitUntil ? `\nSwitching would not help: ${next.reason}. ${next.waitProfile} is the first back, at ${fmtWait(next.waitUntil)}.` : `\nNo other account can take it now (${next.reason}).`);
       return 1;
     }
   }

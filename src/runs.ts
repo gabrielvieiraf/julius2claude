@@ -18,6 +18,7 @@ export interface Run {
   baselineChildren?: number;
   lastFailureAt?: number;
   noBinding?: boolean;
+  deferredSwitch?: { to: string; at: number };
   live?: { permissionMode?: string; effort?: string; model?: string };
   lastSwitch?: { from: string; to: string; reason: string; at: number; fromOrg?: string; toOrg?: string };
   startedAt: number;

@@ -64,7 +64,7 @@ test("#1/#3 login state comes from files: zeroed token = needs login, expired ac
   }
 });
 
-test("#7 Claude's built-in wait-at-limit is disabled only when auto-switch is on", () => {
+test("#7 Claude's built-in wait-at-limit is left on: julius2claude stops it only when another account can take over", () => {
   const sb = sandbox();
   sb.activate();
   try {
@@ -74,7 +74,7 @@ test("#7 Claude's built-in wait-at-limit is disabled only when auto-switch is on
     assert.equal(s.autoContinueAtUsageLimit, undefined);
     cfg.autoSwitch.enabled = true;
     s = JSON.parse(fs.readFileSync(sup.writeRunSettings(cfg, run, cfg.profiles[0], []), "utf8"));
-    assert.equal(s.autoContinueAtUsageLimit, false);
+    assert.equal(s.autoContinueAtUsageLimit, undefined);
     assert.ok(s.hooks.StopFailure[0].hooks[0].command.includes("--run r1"), "run id is baked into the hook command, not env");
   } finally {
     sb.cleanup();

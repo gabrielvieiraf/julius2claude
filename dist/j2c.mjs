@@ -369,6 +369,15 @@ function recordStatusline(profile, rateLimits) {
     }
   });
 }
+function fmtWait(at, now = nowS()) {
+  const d = new Date(at * 1e3);
+  const sameDay = d.toDateString() === new Date(now * 1e3).toDateString();
+  const when = sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : d.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const left = Math.max(0, at - now);
+  const h = Math.floor(left / 3600);
+  const m = Math.ceil(left % 3600 / 60);
+  return `${when} (in ${h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`})`;
+}
 function findQuotaRefusal(transcriptPath, sinceMs) {
   const tail = readTail(transcriptPath, 256 * 1024);
   const lines = tail.split("\n");
@@ -1154,7 +1163,6 @@ function writeRunSettings(cfg, run, p, extra) {
       padding: 0
     }
   };
-  if (cfg.autoSwitch.enabled && p.provider === "claude") settings.autoContinueAtUsageLimit = false;
   const i = extra.indexOf("--settings");
   if (i !== -1 && extra[i + 1]) {
     const v = extra[i + 1];
@@ -1217,51 +1225,67 @@ async function supervise(opts) {
       log(`launch run=${run.id} profile=${profile.name} args=${JSON.stringify(args)}`);
       child = spawn3(claudeBin(), ["--settings", settingsFile, ...args], { stdio: "inherit", cwd, env });
       mutateRun(run.id, (r) => void (r.childPid = child.pid));
-      const outcome = await watch(child, run.id);
-      if (outcome.kind === "exited") {
-        if (outcome.code !== 0) restoreTty(ttyState);
-        return outcome.code;
-      }
-      const cur = loadRun(run.id);
-      const cfgNow = withoutBindings(loadConfig(), opts.noBinding);
-      const pending = cur.pendingSwitch;
+      let cur;
+      let cfgNow;
+      let pending;
       let target;
-      let waitUntil;
-      if (pending.to) {
-        target = cfgNow.profiles.find((p) => p.name === pending.to);
-        if (!target || !allowedIn(cfgNow, cwd).some((p) => p.name === target.name)) {
-          say(`can't switch to "${pending.to}" here.`);
-          mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
-          const again = await watch(child, run.id);
-          if (again.kind === "exited") return again.code;
-          continue;
+      let sessionId;
+      decide: for (; ; ) {
+        const outcome = await watch(child, run.id);
+        if (outcome.kind === "exited") {
+          if (outcome.code !== 0) restoreTty(ttyState);
+          return outcome.code;
         }
-      } else {
-        const next2 = pickNext(cfgNow, loadUsage(), getProfile(cfgNow, profile.name), cwd);
-        target = next2.profile;
-        waitUntil = next2.waitUntil;
-        if (!target && !pending.hard) {
-          mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
-          const again = await watch(child, run.id);
-          if (again.kind === "exited") return again.code;
-          continue;
+        cur = loadRun(run.id);
+        cfgNow = withoutBindings(loadConfig(), opts.noBinding);
+        pending = cur.pendingSwitch;
+        target = void 0;
+        let waitUntil;
+        let waitProfile;
+        if (pending.to) {
+          target = cfgNow.profiles.find((p) => p.name === pending.to);
+          if (!target || !allowedIn(cfgNow, cwd).some((p) => p.name === target.name)) {
+            say(`can't switch to "${pending.to}" here.`);
+            mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
+            continue decide;
+          }
+        } else {
+          const next2 = pickNext(cfgNow, loadUsage(), getProfile(cfgNow, profile.name), cwd);
+          target = next2.profile;
+          waitUntil = next2.waitUntil;
+          waitProfile = next2.waitProfile;
+          if (!target && pending.hard) {
+            const first = waitProfile ?? profile.name;
+            mutateRun(run.id, (r) => {
+              r.pendingSwitch = void 0;
+              r.deferredSwitch = first !== profile.name && waitUntil ? { to: first, at: waitUntil } : void 0;
+            });
+            const when = waitUntil ? fmtWait(waitUntil) : "an unknown time";
+            say(
+              first === profile.name ? `every account is at its limit, so switching would not help. ${profile.name} is the first back, at ${when}; Claude Code continues by itself then, with its shells and agents intact.` : `every account is at its limit, so switching now would not help. ${first} is the first back, at ${when}; the session stays open and moves there then.`
+            );
+            void notify(`exhausted:${waitUntil ?? 0}`, "julius2claude: every account is at its limit", `${first} is the first back, at ${when}.`);
+            continue decide;
+          }
+          if (!target && !pending.hard) {
+            mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
+            continue decide;
+          }
         }
-      }
-      const sessionId = cur.sessionId;
-      if (sessionId && liveRuns().some((r) => r.id !== run.id && r.sessionId === sessionId)) {
-        say(`session ${sessionId.slice(0, 8)} is open in another terminal; not moving it (two processes on one transcript corrupt it).`);
-        mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
-        const again = await watch(child, run.id);
-        if (again.kind === "exited") return again.code;
-        continue;
+        sessionId = cur.sessionId;
+        if (sessionId && liveRuns().some((r) => r.id !== run.id && r.sessionId === sessionId)) {
+          say(`session ${sessionId.slice(0, 8)} is open in another terminal; not moving it (two processes on one transcript corrupt it).`);
+          mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
+          continue decide;
+        }
+        if (!target) {
+          mutateRun(run.id, (r) => void (r.pendingSwitch = void 0));
+          continue decide;
+        }
+        break;
       }
       const killedTasks = await stopClaude(child, cur);
       restoreTty(ttyState);
-      if (!target) {
-        const resumeAt = await waitForReset(cfgNow, profile, cwd, waitUntil);
-        if (!resumeAt) return 0;
-        target = resumeAt;
-      }
       const from = profile.name;
       profile = target;
       mutateUsage((u) => void ((u[profile.name] ??= {}).enteredAt = Date.now()));
@@ -1309,6 +1333,14 @@ function watch(child, runId) {
         lastSeenStop = r.lastStopAt;
         const n = descendants(child.pid).length;
         if (r.baselineChildren === void 0 || n < r.baselineChildren) mutateRun(runId, (x) => void (x.baselineChildren = n));
+      }
+      if (r.deferredSwitch && nowS() >= r.deferredSwitch.at && !r.pendingSwitch) {
+        const d = r.deferredSwitch;
+        mutateRun(runId, (x) => {
+          x.deferredSwitch = void 0;
+          x.pendingSwitch = { to: d.to, reason: `${d.to} is back`, requestedAt: x.lastStopAt ?? 0, hard: true };
+        });
+        return;
       }
       if (readyToSwitch(r, child.pid)) finish({ kind: "switch" });
     }, 250);
@@ -1386,27 +1418,6 @@ function continuePrompt(from, to, reason, killed) {
     killed.length ? `These background processes were stopped during the move; restart the ones still needed: ${killed.join(" | ")}.` : "",
     "Then continue the task from where it stopped."
   ].filter(Boolean).join(" ");
-}
-async function waitForReset(cfg, from, cwd, until) {
-  if (!until) {
-    say("every eligible account is blocked and none has a known reset time. Run `j2c status` to see why.");
-    return void 0;
-  }
-  void notify(`exhausted:${until}`, "julius2claude: every account is at its limit", `The session resumes at ${new Date(until * 1e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}.`);
-  say(`every eligible account is at its limit. Waiting until ${new Date(until * 1e3).toLocaleTimeString()} to resume (Ctrl+C to stop).`);
-  let cancelled = false;
-  const onInt = () => cancelled = true;
-  process.on("SIGINT", onInt);
-  try {
-    while (!cancelled && nowS() < until + 5) await delay(1e3);
-  } finally {
-    process.off("SIGINT", onInt);
-  }
-  if (cancelled) return void 0;
-  const usage = loadUsage();
-  const self = getProfile(loadConfig(), from.name);
-  const next2 = pickNext(cfg, usage, self, cwd);
-  return next2.profile ?? self;
 }
 var delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -1756,7 +1767,10 @@ async function runStatusline(runId, wrapped) {
     if (fresh?.pendingSwitch) parts.push(`\u21AA switching at end of turn (${fresh.pendingSwitch.reason})`);
     else if (!usable(cfg, usage, profile).ok) {
       const next2 = pickNext(cfg, usage, profile, run?.cwd ?? process.cwd());
-      parts.push(next2.profile ? `\u26A0 ${usable(cfg, usage, profile).reason} \xB7 /j2c:next \u2192 ${next2.profile.name}` : `\u26A0 ${usable(cfg, usage, profile).reason}`);
+      if (next2.profile) parts.push(`\u26A0 ${usable(cfg, usage, profile).reason} \xB7 /j2c:next \u2192 ${next2.profile.name}`);
+      else if (fresh?.deferredSwitch) parts.push(`\u23F3 every account at its limit \xB7 moving to ${fresh.deferredSwitch.to} at ${fmtWait(fresh.deferredSwitch.at)}`);
+      else if (next2.waitUntil) parts.push(`\u23F3 every account at its limit \xB7 first back: ${next2.waitProfile ?? profileName} at ${fmtWait(next2.waitUntil)}`);
+      else parts.push(`\u26A0 ${usable(cfg, usage, profile).reason}`);
     }
     lines.push(parts.join(" \xB7 "));
     if (u && !u.enteredAt) mutateUsage((s) => void ((s[profileName] ??= {}).enteredAt = Date.now()));
@@ -2003,8 +2017,9 @@ async function rescue(opts) {
     target = next2.profile;
     if (!target) {
       console.log(describe2(cfg, s));
-      console.log(`
-No other account can take it now (${next2.reason})${next2.waitUntil ? `; the first one frees up ${new Date(next2.waitUntil * 1e3).toLocaleString()}` : ""}.`);
+      console.log(next2.waitUntil ? `
+Switching would not help: ${next2.reason}. ${next2.waitProfile} is the first back, at ${fmtWait(next2.waitUntil)}.` : `
+No other account can take it now (${next2.reason}).`);
       return 1;
     }
   }
@@ -2668,7 +2683,9 @@ function next(argv) {
   const from = run ? getProfile(cfg, run.profile) : getProfile(cfg, cfg.active);
   const pick = pickNext({ ...withoutBindings(cfg, run?.noBinding), autoSwitch: { ...cfg.autoSwitch, allowPaid: cfg.autoSwitch.allowPaid || argv.includes("--paid") } }, loadUsage(), from, run?.cwd ?? process.cwd());
   if (!pick.profile) {
-    console.log(`julius2claude: no other account to move to (${pick.reason})${pick.waitUntil ? `; the next one frees up at ${fmtReset(pick.waitUntil)}` : ""}.`);
+    console.log(
+      pick.waitUntil ? `julius2claude: switching would not help, ${pick.reason}. ${pick.waitProfile} is the first back, at ${fmtWait(pick.waitUntil)}.` : `julius2claude: no other account to move to (${pick.reason}).`
+    );
     return 0;
   }
   if (argv.includes("--from-session") && !run) {
@@ -2864,6 +2881,11 @@ function usageView(argv) {
   };
   const lines = [];
   lines.push(`julius2claude \xB7 auto-switch ${cfg.autoSwitch.enabled ? "on" : "off"} \xB7 order ${ordered(cfg).map((p) => p.name).join(" \u2192 ")}`);
+  const anyUsable = ordered(cfg).some((p) => !p.paused && (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid) && usable(cfg, usage, p).ok);
+  if (!anyUsable) {
+    const first = ordered(cfg).map((p) => ({ p, at: usable(cfg, usage, p).availableAt ?? 0 })).filter((x) => x.at > 0).sort((a, b) => a.at - b.at)[0];
+    lines.push(paint("33", first ? `Every account is at its limit; switching would not help. First back: ${first.p.name} at ${fmtWait(first.at)}.` : "Every account is blocked; run j2c doctor."));
+  }
   lines.push("");
   for (const p of ordered(cfg)) {
     const u = usage[p.name];

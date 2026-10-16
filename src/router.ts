@@ -45,6 +45,7 @@ export function allowedIn(cfg: Config, cwd: string): Profile[] {
 export interface Pick {
   profile?: Profile;
   waitUntil?: number;
+  waitProfile?: string;
   reason?: string;
 }
 
@@ -60,17 +61,22 @@ export function pickNext(cfg: Config, usage: UsageState, from: Profile | undefin
       (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid),
   );
   let soonest = Infinity;
+  let soonestProfile: string | undefined;
+  const consider = (p: Profile, at: number | undefined) => {
+    if (at && at < soonest) {
+      soonest = at;
+      soonestProfile = p.name;
+    }
+  };
   for (const p of candidates) {
     const v = usable(cfg, usage, p, now);
     if (v.ok) return { profile: p };
-    if (v.availableAt) soonest = Math.min(soonest, v.availableAt);
+    consider(p, v.availableAt);
   }
-  if (from) {
-    const v = usable(cfg, usage, from, now);
-    if (v.availableAt) soonest = Math.min(soonest, v.availableAt);
-  }
+  if (from) consider(from, usable(cfg, usage, from, now).availableAt);
   return {
     waitUntil: Number.isFinite(soonest) ? soonest : undefined,
+    waitProfile: soonestProfile,
     reason: candidates.length ? "every eligible account is at its limit" : "no other eligible account in this group",
   };
 }
