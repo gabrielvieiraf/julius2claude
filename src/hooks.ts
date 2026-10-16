@@ -3,7 +3,7 @@ import path from "node:path";
 import { loadConfig, getProfile } from "./config.js";
 import { shouldLeave } from "./router.js";
 import { loadRun, mutateRun, recordSession, type Run } from "./runs.js";
-import { log } from "./store.js";
+import { log, sleepSync } from "./store.js";
 import { ingestTranscript, recordEvent } from "./stats.js";
 import { notify } from "./notify.js";
 import { findQuotaRefusal, loadUsage, mutateUsage, nowS, type QuotaRefusal } from "./usage.js";
@@ -124,7 +124,11 @@ async function onStopFailure(run: Run, data: any): Promise<void> {
       cur.blocks = [...(cur.blocks ?? []), { until: 0, reason: HARD_ERRORS[error], type: "auth" }];
     });
   } else if (error === "rate_limit") {
-    const refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    let refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    for (let i = 0; !refusal && i < 12; i++) {
+      sleepSync(250);
+      refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    }
     if (refusal?.resetsAt) {
       hard = true;
       recordEvent({ type: "limit", profile: run.profile, window: refusal.rateLimitType, resetsAt: refusal.resetsAt });

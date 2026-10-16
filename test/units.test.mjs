@@ -460,3 +460,38 @@ test("a paused profile is never picked automatically, but still starts when aske
   assert.equal(router.pickStart(cfg, {}, "/x").profile.name, "main");
   assert.equal(router.pickStart(cfg, {}, "/x", "corp").profile.name, "corp");
 });
+
+test("a window at 100% in the status line blocks the account until it resets", () => {
+  const sb = sandbox();
+  sb.activate();
+  try {
+    usage.recordStatusline("p", { five_hour: { used_percentage: 40, resets_at: now() + 600 }, seven_day: { used_percentage: 100, resets_at: now() + 9000 } });
+    const b = usage.loadUsage().p.blocks;
+    assert.equal(b.length, 1);
+    assert.equal(b[0].type, "seven_day");
+    assert.equal(b[0].until, now() + 9000);
+    const cfg = rcfg([{ name: "p", provider: "claude" }]);
+    assert.equal(router.shouldLeave(cfg, usage.loadUsage(), cfg.profiles[1], false), true, "no minimum dwell on a full account");
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test("a quota refusal written to the transcript just after StopFailure fires is still found", async () => {
+  const sb = sandbox();
+  try {
+    const t = await hookSetup(sb);
+    setTimeout(() => fs.appendFileSync(t, JSON.stringify({ timestamp: new Date().toISOString(), quotaLimits: { status: "rejected", rateLimitType: "seven_day", resetsAt: now() + 3600 } }) + "\n"), 600);
+    const { spawn } = await import("node:child_process");
+    const code = await new Promise((r) => {
+      const c = spawn(process.execPath, [path.join(ROOT, "dist", "j2c.mjs"), "hook", "stop-failure", "--run", "run1"], { env: { ...process.env }, stdio: ["pipe", "ignore", "inherit"] });
+      c.stdin.end(JSON.stringify({ session_id: "S", error: "rate_limit", transcript_path: t }));
+      c.on("exit", r);
+    });
+    assert.equal(code, 0);
+    assert.equal(usage.loadUsage().main.blocks[0].type, "seven_day");
+    assert.equal(runs.loadRun("run1").pendingSwitch.hard, true);
+  } finally {
+    sb.cleanup();
+  }
+});

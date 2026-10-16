@@ -59,6 +59,14 @@ export function recordStatusline(profile: string, rateLimits: any): void {
     if (five) cur.fiveHour = five;
     if (seven) cur.sevenDay = seven;
     cur.updatedAt = Date.now();
+    const now = nowS();
+    for (const [w, type, label] of [[five, "five_hour", "5-hour limit"], [seven, "seven_day", "weekly limit"]] as const) {
+      if (!w || w.pct < 100 || w.resetsAt <= now) continue;
+      cur.blocks = [
+        ...(cur.blocks ?? []).filter((b) => (b.until === 0 || b.until > now) && b.type !== type),
+        { until: w.resetsAt, reason: `${label} reached`, type },
+      ];
+    }
   });
 }
 

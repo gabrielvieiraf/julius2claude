@@ -359,6 +359,14 @@ function recordStatusline(profile, rateLimits) {
     if (five) cur.fiveHour = five;
     if (seven) cur.sevenDay = seven;
     cur.updatedAt = Date.now();
+    const now = nowS();
+    for (const [w, type, label] of [[five, "five_hour", "5-hour limit"], [seven, "seven_day", "weekly limit"]]) {
+      if (!w || w.pct < 100 || w.resetsAt <= now) continue;
+      cur.blocks = [
+        ...(cur.blocks ?? []).filter((b) => (b.until === 0 || b.until > now) && b.type !== type),
+        { until: w.resetsAt, reason: `${label} reached`, type }
+      ];
+    }
   });
 }
 function findQuotaRefusal(transcriptPath, sinceMs) {
@@ -432,17 +440,22 @@ function pickNext(cfg, usage, from, cwd, now = nowS()) {
     (p) => p.name !== from?.name && !p.paused && allowed.has(p.name) && (p.group ?? "default") === group && (!PAID.has(p.provider) || cfg.autoSwitch.allowPaid)
   );
   let soonest = Infinity;
+  let soonestProfile;
+  const consider = (p, at) => {
+    if (at && at < soonest) {
+      soonest = at;
+      soonestProfile = p.name;
+    }
+  };
   for (const p of candidates) {
     const v = usable(cfg, usage, p, now);
     if (v.ok) return { profile: p };
-    if (v.availableAt) soonest = Math.min(soonest, v.availableAt);
+    consider(p, v.availableAt);
   }
-  if (from) {
-    const v = usable(cfg, usage, from, now);
-    if (v.availableAt) soonest = Math.min(soonest, v.availableAt);
-  }
+  if (from) consider(from, usable(cfg, usage, from, now).availableAt);
   return {
     waitUntil: Number.isFinite(soonest) ? soonest : void 0,
+    waitProfile: soonestProfile,
     reason: candidates.length ? "every eligible account is at its limit" : "no other eligible account in this group"
   };
 }
@@ -914,7 +927,11 @@ async function onStopFailure(run, data) {
       cur.blocks = [...cur.blocks ?? [], { until: 0, reason: HARD_ERRORS[error], type: "auth" }];
     });
   } else if (error === "rate_limit") {
-    const refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    let refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    for (let i = 0; !refusal && i < 12; i++) {
+      sleepSync(250);
+      refusal = findRefusal(run, data.transcript_path ?? run.transcriptPath);
+    }
     if (refusal?.resetsAt) {
       hard = true;
       recordEvent({ type: "limit", profile: run.profile, window: refusal.rateLimitType, resetsAt: refusal.resetsAt });
