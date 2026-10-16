@@ -1,0 +1,20 @@
+{
+  "name": "julius2claude",
+  "owner": {
+    "name": "Gabriel Vieira",
+    "url": "https://github.com/gabrielvieiraf"
+  },
+  "metadata": {
+    "description": "Use several Claude accounts in Claude Code and switch automatically when one hits its usage limit."
+  },
+  "plugins": [
+    {
+      "name": "julius2claude",
+      "source": "./plugin",
+      "description": "Installs and configures julius2claude: several Claude accounts (Pro/Max, Team/Enterprise, Bedrock, Vertex, API key) with automatic switching at the usage limit, resuming the same session.",
+      "category": "productivity",
+      "homepage": "https://github.com/gabrielvieiraf/julius2claude",
+      "keywords": ["accounts", "account-switcher", "usage-limit", "failover", "bedrock"]
+    }
+  ]
+}

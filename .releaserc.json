@@ -37,7 +37,9 @@
           "package.json",
           "package-lock.json",
           "CHANGELOG.md",
-          "dist/j2c.mjs"
+          "dist/j2c.mjs",
+          "plugin/.claude-plugin/plugin.json",
+          "plugin/skills/setup/SKILL.md"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }

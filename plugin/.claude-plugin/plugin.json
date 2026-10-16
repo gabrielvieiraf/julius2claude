@@ -1,0 +1,20 @@
+{
+  "name": "julius2claude",
+  "description": "Installs and configures julius2claude: several Claude accounts with automatic switching at the usage limit, resuming the same session.",
+  "version": "0.6.0",
+  "author": {
+    "name": "Gabriel Vieira",
+    "url": "https://github.com/gabrielvieiraf"
+  },
+  "homepage": "https://github.com/gabrielvieiraf/julius2claude",
+  "repository": "https://github.com/gabrielvieiraf/julius2claude",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "accounts",
+    "account-switcher",
+    "usage-limit",
+    "failover",
+    "bedrock",
+    "multi-account"
+  ]
+}
