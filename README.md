@@ -146,8 +146,13 @@ j2c auto off
 | `--paid` | off | Allow automatic failover to pay-per-token profiles |
 
 A profile that refuses a request (usage limit, authentication error, organization policy) is left
-immediately, regardless of `--dwell`. When every eligible profile is exhausted, julius2claude waits
-for the earliest reset and resumes the session there.
+immediately, regardless of `--dwell`.
+
+When every eligible profile is exhausted, switching would not help, so nothing is stopped.
+julius2claude shows which profile is first back and when, in the terminal, the status line,
+`/j2c:next`, `j2c usage` and a notification. If the current profile is first back, Claude Code's own
+wait continues the session when the limit resets, keeping its shells and agents. If another profile
+is first back, the session stays open until that time and then moves there.
 
 ### Directory bindings
 

@@ -146,8 +146,13 @@ j2c auto off
 | `--paid` | desativado | Permite trocar automaticamente para perfis cobrados por uso |
 
 Um perfil que recusa uma requisição (limite de uso, erro de autenticação, política da organização)
-é abandonado imediatamente, independentemente de `--dwell`. Quando todos os perfis elegíveis estão
-esgotados, o julius2claude aguarda o primeiro limite a ser renovado e retoma a sessão nele.
+é abandonado imediatamente, independentemente de `--dwell`.
+
+Quando todos os perfis elegíveis estão esgotados, trocar não adianta, então nada é encerrado. O
+julius2claude mostra qual perfil volta primeiro e quando, no terminal, na statusline, no
+`/j2c:next`, no `j2c usage` e numa notificação. Se o perfil atual é o primeiro a voltar, a própria
+espera do Claude Code continua a sessão quando o limite é renovado, mantendo shells e agentes. Se
+outro perfil volta antes, a sessão fica aberta até esse horário e então passa para ele.
 
 ### Vínculo de diretórios
 
